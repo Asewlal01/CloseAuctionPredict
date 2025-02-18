@@ -1,5 +1,6 @@
 import torch.nn as nn
 import torch
+from torch.utils import data
 from abc import ABC, abstractmethod
 
 class BaseModel(nn.Module, ABC):
@@ -15,7 +16,7 @@ class BaseModel(nn.Module, ABC):
         super(BaseModel, self).__init__()
 
     @abstractmethod
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Perform forward pass of the model. This method should be implemented by all the models that inherit from
         this class as it is the main method that is called when the model is used.
@@ -31,7 +32,8 @@ class BaseModel(nn.Module, ABC):
         """
         pass
 
-    def train_step(self, x, y, optimizer, criterion, device):
+    def train_step(self, x: torch.Tensor, y: torch.Tensor,
+                   optimizer: torch.optim.Optimizer, criterion: nn.Module , device: str) -> float:
         """
         Perform a training step on the model. It is assumed that x and y are from a batch of data. Does not check
         if the model is in training mode and device on which the data is located.
@@ -65,7 +67,7 @@ class BaseModel(nn.Module, ABC):
 
         return loss.item()
 
-    def train_epoch(self, train_loader, optimizer, criterion, device):
+    def train_epoch(self, train_loader: torch, optimizer, criterion, device) -> float:
         """
         Train the model for one epoch
 
@@ -90,7 +92,8 @@ class BaseModel(nn.Module, ABC):
 
         return total_loss / len(train_loader)
 
-    def train_all(self, train_loader, validation_loader=None, epochs=10, lr=0.001, verbose=True, device='cpu'):
+    def train_all(self, train_loader: data.DataLoader, validation_loader: data.DataLoader=None,
+                  epochs: int=10, lr: float=0.001, verbose: bool=True, device: str='cpu') -> None:
         """
         Train multiple epochs on the model. Uses Adam as the optimizer and MSE as the loss function.
 
@@ -129,7 +132,7 @@ class BaseModel(nn.Module, ABC):
                     print(f"Epoch {epoch + 1} - Validation loss: {validation_loss}")
 
 
-    def evaluate(self, validation_loader, criterion, device):
+    def evaluate(self, validation_loader: data.DataLoader, criterion, device: str) -> float:
         """
         Evaluate the model on the validation data
 
