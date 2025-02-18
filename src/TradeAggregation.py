@@ -5,11 +5,17 @@ import os
 
 def load_file(file):
     """
-    Load data from a zipped file. Data within file is assumed to be from 2021, and contain 4 columns:
-    time, price, quantity and flag.
+    Load trade data from zipped file. Assumed that only data from 2021 is included. Data is assumed to be in the format
+    'time', 'price', 'quantity', 'flag'.
 
-    :param file: Path to the file
-    :return: Dataframe with the data
+    Parameters
+    ----------
+    file : Path to the file
+
+    Returns
+    -------
+    Dataframe with the trade data
+
     """
     with gzip.open(file, 'rb') as f:
         dataframe = pd.read_csv(f, names=['time', 'price', 'quantity', 'flag'], skiprows=1)
@@ -31,9 +37,15 @@ def file_to_name(file, stocks_mapping):
     """
     Get the name of the stock from the file name.
 
-    :param file: Path to the file
-    :param stocks_mapping: Mapping from id to name with syd as the key
-    :return: Name of the stock
+    Parameters
+    ----------
+    file : Path to the file
+    stocks_mapping : Dataframe with the mapping from id to name with syd as the key
+
+    Returns
+    -------
+    Name of the stock
+
     """
     # Get numeric representation of stock
     syd = file.split('_')[-1]
@@ -52,10 +64,16 @@ def file_to_name(file, stocks_mapping):
 
 def get_auction_data(auction_rows):
     """
-    Get the opening and closing price and volume from the auction data.
+    Get the opening and closing price and volume of the auction.
 
-    :param auction_rows: Rows with flag 'AUCTION'
-    :return: Opening and closing price and volume as a tuple
+    Parameters
+    ----------
+    auction_rows : Dataframe with the auction data
+
+    Returns
+    -------
+    Dataframe with the opening and closing price and volume
+
     """
     # Get the rows with the opening and closing price
     unique_prices = auction_rows['price'].unique()
@@ -80,10 +98,16 @@ def get_auction_data(auction_rows):
 
 def volume_weighted_average_price(dataframe):
     """
-    Calculate the volume weighted average price of the data.
+    Compute the volume weighted average price of a dataframe using the price and quantity columns.
 
-    :param dataframe: Dataframe with columns 'price' and 'quantity'
-    :return: Volume weighted average price of the dataframe
+    Parameters
+    ----------
+    dataframe : Dataframe with the price and quantity columns
+
+    Returns
+    -------
+    Volume weighted average price
+
     """
     if dataframe['quantity'].sum() == 0:
         return np.nan
@@ -95,11 +119,17 @@ def volume_weighted_average_price(dataframe):
 
 def aggregate_trades(data_day, interval='1min'):
     """
-    Aggregate the all the trades within a day to a given interval.
+    Aggregate the trades of a day to a given interval.
 
-    :param data_day: Dataframe with the data for a day
-    :param interval: Resampling interval
-    :return:
+    Parameters
+    ----------
+    data_day : Dataframe with the trades of a day
+    interval : Interval to aggregate the trades
+
+    Returns
+    -------
+    Dataframe with the aggregated trades
+
     """
     # Getting the indices of the auction rows and normal rows
     auction_flagged_rows = data_day['flag'] == 'AUCTION'
@@ -149,16 +179,22 @@ def aggregate_trades(data_day, interval='1min'):
 def aggregate_trades_in_file(file, stocks_mapping, path_to_save, interval='1min', days_to_save=np.inf,
                              method_to_save='parquet', verbose=False):
     """
-    Aggregate all the days within a file to a given interval.
+    Aggregate the trades in a file to a given interval and save the data.
 
-    :param file: Path to the file
-    :param stocks_mapping: Mapping from id to name with syd as the key
-    :param path_to_save: Path to save the aggregated data
-    :param interval: Resampling interval
-    :param days_to_save: Number of days to save. If -1, all days are saved
-    :param method_to_save: Method to save the data. Either 'parquet' or 'csv'
-    :param verbose: If True, print progress
-    :return: Dataframe with the aggregated trades
+    Parameters
+    ----------
+    file : Path to the file
+    stocks_mapping : Dataframe with the mapping from id to name with syd as the key
+    path_to_save : Path to save the aggregated trades
+    interval : Interval to aggregate the trades
+    days_to_save : Number of days to save
+    method_to_save : Method to save the data
+    verbose : Whether to print progress
+
+    Returns
+    -------
+    Name of the stock
+
     """
     # Load the data and make sure that we have data
     data = load_file(file)
