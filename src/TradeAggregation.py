@@ -101,10 +101,13 @@ def aggregate_trades(data_day, interval='1min'):
     :param interval: Resampling interval
     :return:
     """
-    # Getting the auction data and normal trading data
-    rows = data_day['flag'] == 'AUCTION'
-    auction_rows = data_day[rows]
-    normal_rows = data_day[~rows]
+    # Getting the indices of the auction rows and normal rows
+    auction_flagged_rows = data_day['flag'] == 'AUCTION'
+    normal_flagged_rows = data_day['flag'] == 'NORMAL'
+
+    # Get the auction and normal rows
+    auction_rows = data_day[auction_flagged_rows]
+    normal_rows = data_day[normal_flagged_rows]
 
     # Obtaining the opening and closing prices
     auction_df = get_auction_data(auction_rows)
