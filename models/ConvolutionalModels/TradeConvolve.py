@@ -1,4 +1,3 @@
-\
 from models.ConvolutionalModels.BaseConvolve import BaseConvolve
 
 class TradeConvolve(BaseConvolve):
