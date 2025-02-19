@@ -7,8 +7,8 @@ class BaseConvolve(BaseModel):
     Base class for all the convolutional models. It inherits from the BaseModel class.
     """
 
-    def __init__(self, feature_size, input_size, conv_channels, fc_neurons, kernel_size, stride=1, padding=0,
-                 dilation=1):
+    def __init__(self, feature_size: int, input_size: int, conv_channels: list[int], fc_neurons: list[int],
+                 kernel_size: int, stride: int=1, padding: int=0, dilation: int=1):
         """
         Initializes the Convolutional Neural Network for predicting the Closing Price of a stock using the Trade data.
 
@@ -37,6 +37,7 @@ class BaseConvolve(BaseModel):
         # Convolutional Layers
         in_channels = 2
         output_size = input_size
+        self.conv_2d = False
         for out_channels in conv_channels:
             # Go for 2D convolution if there are more than 1 feature
             if feature_size > 1:
@@ -50,6 +51,7 @@ class BaseConvolve(BaseModel):
                 )
 
                 feature_size = 1
+                self.conv_2d = True
             else:
                 layers.append(
                     nn.Conv1d(in_channels, out_channels, kernel_size, stride, padding, dilation)
@@ -73,6 +75,10 @@ class BaseConvolve(BaseModel):
 
             # Last output size is the number of channels
             in_channels = out_channels
+
+            # If output_size is too small raise error
+            if output_size < 1:
+                raise ValueError("Input size is too small for the given convolutional layers")
 
         # Compute the size of the output of the convolutional layers
         input_size = output_size * in_channels
@@ -102,6 +108,12 @@ class BaseConvolve(BaseModel):
         self.layers = nn.ModuleList(layers)
 
     def forward(self, x):
+        # If only one sample is given, add a batch dimension
+        if self.conv_2d:
+            x = x.unsqueeze(0) if x.dim() == 3 else x
+        else:
+            x = x.unsqueeze(0) if x.dim() == 2 else x
+
         for layer in self.layers:
             x = layer(x)
         return x
