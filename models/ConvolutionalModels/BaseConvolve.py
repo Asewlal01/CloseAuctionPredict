@@ -34,10 +34,12 @@ class BaseConvolve(BaseModel):
         conv_channels = [conv_channels] if type(conv_channels) == int else conv_channels
         fc_neurons = [fc_neurons] if type(fc_neurons) == int else fc_neurons
 
+        # Unsqueeze the input if it is 2D or 3D depending on the number of features
+        layers.append(Unsqueeze(feature_size > 1))
+
         # Convolutional Layers
         in_channels = 2
         output_size = sequence_size
-        self.conv_2d = False
         for out_channels in conv_channels:
             # Go for 2D convolution if there are more than 1 feature
             if feature_size > 1:
@@ -51,7 +53,6 @@ class BaseConvolve(BaseModel):
                 )
 
                 feature_size = 1
-                self.conv_2d = True
             else:
                 layers.append(
                     nn.Conv1d(in_channels, out_channels, kernel_size, stride, padding, dilation)
@@ -107,13 +108,20 @@ class BaseConvolve(BaseModel):
         # Save the layers
         self.layers = nn.ModuleList(layers)
 
+class Unsqueeze(nn.Module):
+    """
+    Layer designed to unsqueeze a tensor. This is needed when the input is not given as a batch, which may cause
+    errors in the forward pass.
+    """
+    def __init__(self, is_2d: bool=False):
+        super(Unsqueeze, self).__init__()
+        self.is_2d = is_2d
+
     def forward(self, x):
         # If only one sample is given, add a batch dimension
-        if self.conv_2d:
+        if self.is_2d:
             x = x.unsqueeze(0) if x.dim() == 3 else x
         else:
             x = x.unsqueeze(0) if x.dim() == 2 else x
 
-        for layer in self.layers:
-            x = layer(x)
         return x
