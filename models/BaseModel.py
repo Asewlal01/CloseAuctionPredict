@@ -8,11 +8,16 @@ class BaseModel(nn.Module):
     training functionality and other useful methods that are common to all the models.
     """
 
-    def __init__(self):
+    def __init__(self, expected_dim: int):
         """
-        Initializes the BaseModel class.
+        Initializes the BaseModel class. It should be called by all the classes that inherit from this class.
+
+        Parameters
+        ----------
+        expected_dim : Expected number of dimensions after unsqueezing the input tensor.
         """
         super(BaseModel, self).__init__()
+        self.layers = [Unsqueeze(expected_dim)]
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -160,3 +165,18 @@ class BaseModel(nn.Module):
         return total_loss / len(validation_loader)
 
 
+class Unsqueeze(nn.Module):
+    """
+    Layer designed to unsqueeze a tensor. This is needed when the input is not given as a batch, which may cause
+    errors in the forward pass.
+    """
+
+    def __init__(self, expected_dim: int):
+        super(Unsqueeze, self).__init__()
+        self.expected_dim = expected_dim
+
+    def forward(self, x):
+        # If only one sample is given, add a batch dimension
+        if x.dim() == self.expected_dim - 1:
+            return x.unsqueeze(0)
+        return x

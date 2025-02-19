@@ -1,4 +1,4 @@
-from models.BaseModel import BaseModel
+from models.BaseModel import BaseModel, Unsqueeze
 from torch import nn
 
 
@@ -25,17 +25,12 @@ class BaseConvolve(BaseModel):
         padding : Padding for the convolutional layers. Assumed to be constant for all layers
         dilation : Dilation for the convolutional layers. Assumed to be constant for all layers
         """
-        super(BaseConvolve, self).__init__()
-
-        # Instantiate the layers
-        layers = []
+        expected_dims = 3 + (feature_size > 1)
+        super(BaseConvolve, self).__init__(expected_dims)
 
         # Making sure that conv_channels and fc_neurons are lists
         conv_channels = [conv_channels] if type(conv_channels) == int else conv_channels
         fc_neurons = [fc_neurons] if type(fc_neurons) == int else fc_neurons
-
-        # Unsqueeze the input if it is 2D or 3D depending on the number of features
-        layers.append(Unsqueeze(feature_size > 1))
 
         # Convolutional Layers
         in_channels = 2
@@ -43,18 +38,18 @@ class BaseConvolve(BaseModel):
         for out_channels in conv_channels:
             # Go for 2D convolution if there are more than 1 feature
             if feature_size > 1:
-                layers.append(
+                self.layers.append(
                     nn.Conv2d(in_channels, out_channels, (kernel_size, feature_size), stride, padding, dilation)
                 )
 
                 # Remove last dimension of the output
-                layers.append(
+                self.layers.append(
                     nn.Flatten(2)
                 )
 
                 feature_size = 1
             else:
-                layers.append(
+                self.layers.append(
                     nn.Conv1d(in_channels, out_channels, kernel_size, stride, padding, dilation)
                 )
 
@@ -62,12 +57,12 @@ class BaseConvolve(BaseModel):
             output_size = (output_size + 2 * padding - kernel_size) // stride + 1
 
             # ReLU Activation
-            layers.append(
+            self.layers.append(
                 nn.ReLU()
             )
 
             # Max Pooling
-            layers.append(
+            self.layers.append(
                 nn.MaxPool1d(2)
             )
 
@@ -81,47 +76,29 @@ class BaseConvolve(BaseModel):
             if output_size < 1:
                 raise ValueError("Input size is too small for the given convolutional layers")
 
-        # Compute the size of the output of the convolutional layers
+        # Compute the size of the output of the convolutional self.layers
         sequence_size = output_size * in_channels
 
-        # Flatten the output of the convolutional layers
-        layers.append(nn.Flatten())
+        # Flatten the output of the convolutional self.layers
+        self.layers.append(nn.Flatten())
 
-        # Fully Connected Layers
+        # Fully Connected self.layers
         for out_neurons in fc_neurons:
             # Fully Connected Layer
-            layers.append(
+            self.layers.append(
                 nn.Linear(sequence_size, out_neurons)
             )
 
             # ReLU Activation
-            layers.append(
+            self.layers.append(
                 nn.ReLU()
             )
             sequence_size = out_neurons
 
         # Output Layer
-        layers.append(
+        self.layers.append(
             nn.Linear(sequence_size, 1)
         )
 
         # Save the layers
-        self.layers = nn.ModuleList(layers)
-
-class Unsqueeze(nn.Module):
-    """
-    Layer designed to unsqueeze a tensor. This is needed when the input is not given as a batch, which may cause
-    errors in the forward pass.
-    """
-    def __init__(self, is_2d: bool=False):
-        super(Unsqueeze, self).__init__()
-        self.is_2d = is_2d
-
-    def forward(self, x):
-        # If only one sample is given, add a batch dimension
-        if self.is_2d:
-            x = x.unsqueeze(0) if x.dim() == 3 else x
-        else:
-            x = x.unsqueeze(0) if x.dim() == 2 else x
-
-        return x
+        self.layers = nn.ModuleList(self.layers)
