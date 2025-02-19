@@ -7,17 +7,17 @@ class BaseConvolve(BaseModel):
     Base class for all the convolutional models. It inherits from the BaseModel class.
     """
 
-    def __init__(self, feature_size: int, input_size: int, conv_channels: list[int], fc_neurons: list[int],
+    def __init__(self, feature_size: int, sequence_size: int, conv_channels: list[int], fc_neurons: list[int],
                  kernel_size: int, stride: int=1, padding: int=0, dilation: int=1):
         """
-        Initializes the Convolutional Neural Network for predicting the Closing Price of a stock using the Trade data.
+        Initializes the Convolutional Neural Network for predicting the Closing Price of a stock.
 
         Parameters
         ----------
         feature_size : Number of features in each channel of the input data. If the features is greater than 1, then
         the first convolutional layer will apply a 2D convolution with a kernel size of (kernel_size, feature_size)
         which will lead to new channels having 1 feature each.
-        input_size : Number of sequence steps in the input data
+        sequence_size : Number of sequence steps in the input data
         conv_channels : Number of channels after each convolutional layer
         fc_neurons : Number of neurons in each fully connected layer
         kernel_size : Size of the kernel for the convolutional layers. Assumed to be constant for all layers.
@@ -36,7 +36,7 @@ class BaseConvolve(BaseModel):
 
         # Convolutional Layers
         in_channels = 2
-        output_size = input_size
+        output_size = sequence_size
         self.conv_2d = False
         for out_channels in conv_channels:
             # Go for 2D convolution if there are more than 1 feature
@@ -81,7 +81,7 @@ class BaseConvolve(BaseModel):
                 raise ValueError("Input size is too small for the given convolutional layers")
 
         # Compute the size of the output of the convolutional layers
-        input_size = output_size * in_channels
+        sequence_size = output_size * in_channels
 
         # Flatten the output of the convolutional layers
         layers.append(nn.Flatten())
@@ -90,18 +90,18 @@ class BaseConvolve(BaseModel):
         for out_neurons in fc_neurons:
             # Fully Connected Layer
             layers.append(
-                nn.Linear(input_size, out_neurons)
+                nn.Linear(sequence_size, out_neurons)
             )
 
             # ReLU Activation
             layers.append(
                 nn.ReLU()
             )
-            input_size = out_neurons
+            sequence_size = out_neurons
 
         # Output Layer
         layers.append(
-            nn.Linear(input_size, 1)
+            nn.Linear(sequence_size, 1)
         )
 
         # Save the layers
