@@ -1,4 +1,4 @@
-from models.BaseModel import BaseModel, Unsqueeze
+from models.BaseModel import BaseModel
 from torch import nn
 
 

@@ -27,7 +27,7 @@ class BaseLSTM(BaseModel):
         self.layers.append(nn.LSTM(feature_size, hidden_size, lstm_size, batch_first=True))
 
         # Add the output state layer
-        self.layers.append(OutputStateLSTM())
+        self.layers.append(LastOutputLSTM())
 
         # Add fully connected layers
         input_size = hidden_size
@@ -45,13 +45,13 @@ class BaseLSTM(BaseModel):
         # Save the layers
         self.layers = nn.ModuleList(self.layers)
 
-class OutputStateLSTM(nn.Module):
+class LastOutputLSTM(nn.Module):
     """
     Layer designed to extract the output state from a LSTM layer. The LSTM layer returns (output, (h_n, c_n)) where
     only the output is needed for the task. More specifically, we only need the last output of the sequence.
     """
     def __init__(self, multiple_layers: int=1):
-        super(OutputStateLSTM, self).__init__()
+        super(LastOutputLSTM, self).__init__()
         self.multiple_layers = multiple_layers
 
     def forward(self, x):
