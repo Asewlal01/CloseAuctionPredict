@@ -1,9 +1,8 @@
 import torch.nn as nn
 import torch
 from torch.utils import data
-from abc import ABC, abstractmethod
 
-class BaseModel(nn.Module, ABC):
+class BaseModel(nn.Module):
     """
     Abstract class that represents a model. It should be inherited by all the models in the project as it provides
     training functionality and other useful methods that are common to all the models.
@@ -15,7 +14,6 @@ class BaseModel(nn.Module, ABC):
         """
         super(BaseModel, self).__init__()
 
-    @abstractmethod
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Perform forward pass of the model. This method should be implemented by all the models that inherit from
@@ -30,7 +28,9 @@ class BaseModel(nn.Module, ABC):
         Output tensor
 
         """
-        pass
+        for layer in self.layers:
+            x = layer(x)
+        return x
 
     def train_step(self, x: torch.Tensor, y: torch.Tensor,
                    optimizer: torch.optim.Optimizer, criterion: nn.Module , device: str) -> float:
