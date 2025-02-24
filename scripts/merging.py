@@ -1,18 +1,23 @@
 import os
-from src.AggregationMerging import merge_trades
+from src.AggregationMerger import AggregationMerger
 
-# Path to trade files
-processed_trades = '../data/processed/aggregated_trades'
+# Path to the directory containing the aggregated trade data
+aggregated_trades_path = '../data/processed/aggregated_trades'
 save_path = '../data/processed/merged_trades'
+stocks = os.listdir(aggregated_trades_path)
 
-# Go through each stock
-for stock in os.listdir(processed_trades):
-    df_prices, df_volumes = merge_trades(f'{processed_trades}/{stock}')
+# Merger object
+n_steps = 442
+train_split = 0.8
+validation_split = 0.1
+merger = AggregationMerger(n_steps, train_split, validation_split)
 
-    # Creating folder to save
-    if not os.path.exists(f'{save_path}/{stock}'):
-        os.makedirs(f'{save_path}/{stock}')
+for i, stock in enumerate(stocks):
+    stock_path = os.path.join(aggregated_trades_path, stock)
+    merger.add_stock(stock, stock_path)
 
-    # Saving as parquet
-    df_prices.to_parquet(f'{save_path}/{stock}/{stock}_prices.parquet')
-    df_volumes.to_parquet(f'{save_path}/{stock}/{stock}_volumes.parquet')
+    print(f"Added stock {stock} - {(i+1) / len(stocks) * 100:.2f}%")
+
+# Saving
+merger.save_data(save_path)
+
