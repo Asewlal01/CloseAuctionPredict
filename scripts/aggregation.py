@@ -1,18 +1,35 @@
-from src.TradeAggregation import *
 import pandas as pd
 import os
+from src.TradeAggregator import TradeAggregator
 
-# Path to files
 trades_path = '../data/raw/trades'
-path_to_save = '../data/processed/aggregated_trades'
+exchanges = [exchange for exchange in os.listdir(trades_path) if os.path.isdir(f'{trades_path}/{exchange}')][1:]
+df_exchanges = pd.read_csv('../data/raw/exchanges.csv', keep_default_na=False)
 
-# Mapping
-stock_mapping = pd.read_csv('../data/stocks_mapping.csv')
+aggregated_trades = '../data/processed/aggregated_trades'
 
-# Processing
-for file in os.listdir(trades_path):
-    stock_name = aggregate_trades_in_file(f'{trades_path}/{file}', stock_mapping, path_to_save, interval='1min',
-                                          method_to_save='parquet', verbose=False)
+for i, exchange in enumerate(exchanges):
+    print(f'Processing {exchange}')
+    exchange_path = f'{trades_path}/{exchange}'
+    aggregator = TradeAggregator(exchange, df_exchanges)
 
-    if stock_name is not None:
-        print(f'Processed trades of {stock_name}')
+    stocks = os.listdir(exchange_path)
+    for stock in stocks:
+        stock_path = f'{exchange_path}/{stock}'
+        days = os.listdir(stock_path)
+
+        for day in days:
+            df = pd.read_parquet(f'{stock_path}/{day}')
+            resampled_df = aggregator.process_df(df)
+
+            if resampled_df is None:
+                continue
+
+            save_path = f'{aggregated_trades}/{stock}'
+            if not os.path.exists(save_path):
+                os.makedirs(save_path)
+            day = day.split('.')[0]
+            resampled_df.to_parquet(f'{save_path}/{day}.parquet')
+
+
+    print(f'{i+1}/{len(exchanges)} exchanges processed')
