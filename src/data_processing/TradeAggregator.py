@@ -119,9 +119,9 @@ class TradeAggregator:
         closing_rows = auction_df[auction_df['price'] == closing_price]
         closing_quantity = np.sum(closing_rows['quantity'])
 
-        df = pd.DataFrame(columns=['price', 'quantity'])
-        df.loc['opening'] = [opening_price, opening_quantity]
-        df.loc['closing'] = [closing_price, closing_quantity]
+        df = pd.DataFrame(columns=['open', 'close', 'high', 'low', 'vwap', 'volume'])
+        df.loc['opening'] = [opening_price] * 5 + [opening_quantity]
+        df.loc['closing'] = [closing_price] * 5 + [closing_quantity]
 
         return df
 
@@ -170,14 +170,37 @@ class TradeAggregator:
         resample = normal_df.resample(freq, on='time', label='left')
         resampled_df = resample.apply(aggregate)
 
-        # For NaN values it is assumed that the price did not change and volume was 0
-        resampled_df['price'] = resampled_df['price'].ffill()
-        resampled_df['quantity'] = resampled_df['quantity'].fillna(0)
-
         # Removing the day from the index and converting the time to a string
         resampled_df.index = resampled_df.index.strftime('%H:%M:%S')
 
         return resampled_df
+
+    def fix_missing(self, df):
+        """
+        This function fixes the missing values that occur when there are no trades in a given minute.
+        It fills the missing values with the last available value.
+
+        Parameters
+        ----------
+        df : Dataframe with the resampled data
+
+        Returns
+        -------
+        Dataframe with the missing values filled
+        """
+        # The VWAP is forward filled
+        df['vwap'] = df['vwap'].ffill()
+
+        # No trades mean zero volume
+        df['volume'] = df['volume'].fillna(0)
+
+        # The open, close, high and low are filled with vwap of the current minute
+        df['open'] = df['open'].fillna(df['vwap'])
+        df['close'] = df['close'].fillna(df['vwap'])
+        df['high'] = df['high'].fillna(df['vwap'])
+        df['low'] = df['low'].fillna(df['vwap'])
+
+        return df
 
     def process_df(self, df):
         """
@@ -225,9 +248,13 @@ def aggregate(df):
     """
     # No point in aggregating if the dataframe is empty
     if df['quantity'].sum() == 0:
-        return pd.Series({'price': np.nan, 'quantity': np.nan})
+        return pd.Series({'open': np.nan, 'close': np.nan, 'high': np.nan, 'low': np.nan, 'vwap': np.nan, 'volume': np.nan})
 
-    quantity = np.sum(df['quantity'])
-    price = np.sum(df['price'] * df['quantity']) / quantity
+    open = df.iloc[0]['price']
+    close = df.iloc[-1]['price']
+    high = df['price'].max()
+    low = df['price'].min()
+    volume = df['quantity'].sum()
+    vwap = np.sum(df['price'] * df['quantity']) / volume
 
-    return pd.Series({'price': price, 'quantity': quantity})
+    return pd.Series({'open': open, 'close': close, 'high': high, 'low': low, 'vwap': vwap, 'volume': volume})

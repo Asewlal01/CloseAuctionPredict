@@ -1,6 +1,6 @@
 import pandas as pd
 import os
-from src.TradeAggregator import TradeAggregator
+from src.data_processing.TradeAggregator import TradeAggregator
 
 trades_path = '../data/raw/trades'
 exchanges = [exchange for exchange in os.listdir(trades_path) if os.path.isdir(f'{trades_path}/{exchange}')][1:]
