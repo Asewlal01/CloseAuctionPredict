@@ -107,7 +107,6 @@ class TradeAggregator:
 
         # If the opening and closing price are the same then one of the prices is missing
         if opening['price'] == closing['price']:
-            print('Missing opening or closing price')
             return None
 
         # Get the auction price and quantity
