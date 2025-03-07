@@ -8,15 +8,14 @@ class TradeLSTM(BaseLSTM):
     price of the stock.
     """
 
-    def __init__(self, sequence_size, hidden_size: int, lstm_size: int, fc_neurons: list[int]):
+    def __init__(self,  hidden_size: int, lstm_size: int, fc_neurons: list[int]):
         """
         Initializes the LSTM Neural Network.
 
         Parameters
         ----------
-        sequence_size : Number of sequence steps in the input data
         hidden_size : Dimension of the hidden state of the LSTM
         lstm_size : Number of LSTM layers
         fc_neurons : Number of nodes in the fully connected layers. Can be a list of integers or a single integer.
         """
-        super(TradeLSTM, self).__init__(2, sequence_size, hidden_size, lstm_size, fc_neurons)
+        super(TradeLSTM, self).__init__(2,  hidden_size, lstm_size, fc_neurons)

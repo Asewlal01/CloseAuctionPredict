@@ -14,8 +14,7 @@ class BaseConvolve(BaseModel):
 
         Parameters
         ----------
-        feature_size : Number of features in each channel of the input data. If the features is greater than 1, then
-        the first convolutional layer will apply a 2D convolution with a kernel size of (kernel_size, feature_size)
+        feature_size : Number of features in each channel of the input data.
         which will lead to new channels having 1 feature each.
         sequence_size : Number of sequence steps in the input data
         conv_channels : Number of channels after each convolutional layer
@@ -25,7 +24,7 @@ class BaseConvolve(BaseModel):
         padding : Padding for the convolutional layers. Assumed to be constant for all layers
         dilation : Dilation for the convolutional layers. Assumed to be constant for all layers
         """
-        expected_dims = 3 + (feature_size > 1)
+        expected_dims = 3
         super(BaseConvolve, self).__init__(expected_dims)
 
         # Making sure that conv_channels and fc_neurons are lists
@@ -33,25 +32,12 @@ class BaseConvolve(BaseModel):
         fc_neurons = [fc_neurons] if type(fc_neurons) == int else fc_neurons
 
         # Convolutional Layers
-        in_channels = 2
+        in_channels = feature_size
         output_size = sequence_size
         for out_channels in conv_channels:
-            # Go for 2D convolution if there are more than 1 feature
-            if feature_size > 1:
-                self.layers.append(
-                    nn.Conv2d(in_channels, out_channels, (kernel_size, feature_size), stride, padding, dilation)
-                )
-
-                # Remove last dimension of the output
-                self.layers.append(
-                    nn.Flatten(2)
-                )
-
-                feature_size = 1
-            else:
-                self.layers.append(
-                    nn.Conv1d(in_channels, out_channels, kernel_size, stride, padding, dilation)
-                )
+            self.layers.append(
+                nn.Conv1d(in_channels, out_channels, kernel_size, stride, padding, dilation)
+            )
 
             # Size reduction from convolution
             output_size = (output_size + 2 * padding - kernel_size) // stride + 1
@@ -98,6 +84,9 @@ class BaseConvolve(BaseModel):
         # Output Layer
         self.layers.append(
             nn.Linear(sequence_size, 1)
+        )
+        self.layers.append(
+            nn.Sigmoid()
         )
 
         # Save the layers

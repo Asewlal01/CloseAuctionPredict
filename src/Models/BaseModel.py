@@ -38,7 +38,7 @@ class BaseModel(nn.Module):
         return x
 
     def train_step(self, x: torch.Tensor, y: torch.Tensor,
-                   optimizer: torch.optim.Optimizer, criterion: nn.Module , device: str) -> float:
+                   optimizer: torch.optim.Optimizer, criterion: nn.Module) -> float:
         """
         Perform a training step on the model. It is assumed that x and y are from a batch of data. Does not check
         if the model is in training mode and device on which the data is located.
@@ -58,9 +58,9 @@ class BaseModel(nn.Module):
         # Zero the gradient before optimizing
         optimizer.zero_grad()
 
-        # Moving to device
-        x = x.to(device)
-        y = y.to(device)
+        # # Moving to device
+        # x = x.to(device)
+        # y = y.to(device)
 
         # Forward pass
         output = self(x)
@@ -72,7 +72,7 @@ class BaseModel(nn.Module):
 
         return loss.item()
 
-    def train_epoch(self, train_loader: torch, optimizer, criterion, device) -> float:
+    def train_epoch(self, train_loader: torch, optimizer, criterion) -> float:
         """
         Train the model for one epoch
 
@@ -92,13 +92,13 @@ class BaseModel(nn.Module):
         self.train()
         total_loss = 0
         for x, y in train_loader:
-            batch_loss = self.train_step(x, y, optimizer, criterion, device)
+            batch_loss = self.train_step(x, y, optimizer, criterion)
             total_loss += batch_loss
 
         return total_loss / len(train_loader)
 
     def train_all(self, train_loader: data.DataLoader, validation_loader: data.DataLoader=None,
-                  epochs: int=10, lr: float=0.001, verbose: bool=True, device: str='cpu') -> None:
+                  epochs: int=10, lr: float=0.001, verbose: bool=True) -> None:
         """
         Train multiple epochs on the model. Uses Adam as the optimizer and MSE as the loss function.
 
@@ -123,12 +123,12 @@ class BaseModel(nn.Module):
         # Main loop
         for epoch in range(epochs):
             # Training loss
-            train_loss = self.train_epoch(train_loader, optimizer, criterion, device)
+            train_loss = self.train_epoch(train_loader, optimizer, criterion)
 
             # Validation loss
             validation_loss = None
             if validation_loader is not None:
-                validation_loss = self.evaluate(validation_loader, criterion, device)
+                validation_loss = self.evaluate(validation_loader, criterion)
 
             # Logging
             if verbose:
@@ -137,7 +137,7 @@ class BaseModel(nn.Module):
                     print(f"Epoch {epoch + 1} - Validation loss: {validation_loss}")
 
 
-    def evaluate(self, validation_loader: data.DataLoader, criterion, device: str) -> float:
+    def evaluate(self, validation_loader: data.DataLoader, criterion) -> float:
         """
         Evaluate the model on the validation data
 
@@ -156,8 +156,8 @@ class BaseModel(nn.Module):
         total_loss = 0
         with torch.no_grad():
             for x, y in validation_loader:
-                x = x.to(device)
-                y = y.to(device)
+                # x = x.to(device)
+                # y = y.to(device)
                 output = self(x)
                 loss = criterion(output, y)
                 total_loss += loss.item()
