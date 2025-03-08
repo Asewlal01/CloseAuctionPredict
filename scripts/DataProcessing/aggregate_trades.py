@@ -1,17 +1,20 @@
 import os
 import pandas as pd
-from src.DataProcessing.TradeAggregator import TradeAggregator
+from DataProcessing.TradeAggregator import TradeAggregator
 from tqdm import tqdm
 
-trade_dir = '../../data/processed/split_trades'
-save_dir = '../../data/processed/aggregated_trades'
-exchange_data = pd.read_csv('../../data/raw/exchanges.csv', keep_default_na=False)
+trade_dir = 'data/processed/split_trades'
+save_dir = 'data/processed/aggregated_trades'
+exchange_data = pd.read_csv('data/raw/exchanges.csv', keep_default_na=False)
 aggregation_interval = '1min'
 
 for i, exchange in enumerate(os.listdir(trade_dir)):
-    exchange_info = exchange_data[exchange_data['code'] == exchange]
-    exchange_path = os.path.join(trade_dir, exchange)
+    exchange_info = exchange_data[exchange_data['bb'] == exchange]
+    if exchange_info.empty:
+        print(f'No exchange info for {exchange}')
+        continue
 
+    exchange_path = os.path.join(trade_dir, exchange)
     aggregator = TradeAggregator(save_dir, exchange_info, '1min')
 
     for stock in tqdm(os.listdir(exchange_path)):
