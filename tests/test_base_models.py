@@ -1,6 +1,6 @@
-from models.ConvolutionalModels.BaseConvolve import BaseConvolve
-from models.ReccurentModels.BaseLSTM import BaseLSTM
-from models.TransformerModels.BaseTransformer import BaseTransformer
+from Models.ConvolutionalModels.BaseConvolve import BaseConvolve
+from Models.ReccurentModels import BaseLSTM
+from Models.TransformerModels.BaseTransformer import BaseTransformer
 import torch
 
 # Global Variables
@@ -18,22 +18,22 @@ def test_base_convolve():
     model = BaseConvolve(1, sequence_size, conv_channels, fc_neurons, kernel_size)
 
     # Multiple Samples
-    X = torch.rand(samples, 2, sequence_size)
+    X = torch.rand(samples, 1, sequence_size)
     assert model(X).shape == (samples, 1)
 
     # Single Sample
-    X = torch.rand(2, sequence_size)
+    X = torch.rand(1, sequence_size)
     assert model(X).shape == (1, 1)
 
     # Testing with multiple features
     model = BaseConvolve(features, sequence_size, conv_channels, fc_neurons, kernel_size)
 
     # Multiple Samples
-    X = torch.rand(samples, 2, sequence_size, features)
+    X = torch.rand(samples, features, sequence_size)
     assert model(X).shape == (samples, 1)
 
     # Single Sample
-    X = torch.rand(2, sequence_size, features)
+    X = torch.rand(features, sequence_size)
     assert model(X).shape == (1, 1)
 
 def test_base_lstm():
