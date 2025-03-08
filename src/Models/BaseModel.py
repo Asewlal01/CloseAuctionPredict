@@ -1,6 +1,5 @@
 import torch.nn as nn
 import torch
-from torch.utils import data
 
 class BaseModel(nn.Module):
     """
@@ -18,6 +17,10 @@ class BaseModel(nn.Module):
         """
         super(BaseModel, self).__init__()
         self.layers = [Unsqueeze(expected_dim)]
+        self.output_dim = None
+        self.build_model()
+        self.output_layer()
+
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -36,6 +39,27 @@ class BaseModel(nn.Module):
         for layer in self.layers:
             x = layer(x)
         return x
+
+    def build_model(self) -> None:
+        """
+        Build the model by adding all layers to self.layers. This method should be implemented by all the Models
+        that inherit from this class.
+        """
+        raise NotImplementedError("Subclasses must implement `build_model`")
+
+    def output_layer(self):
+        """
+        Adds the output layer to the model. This method requires self.output_dim to be defined, as it is the dimension
+        of the layer before the output layer.
+        """
+        if self.output_dim is None:
+            raise AttributeError("The attribute `output_dim` is not defined in the model.")
+
+        self.layers.append(
+            nn.Linear(self.output_dim, 1)
+        )
+        self.layers = nn.ModuleList(self.layers)
+
 
 class Unsqueeze(nn.Module):
     """
