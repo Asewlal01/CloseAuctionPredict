@@ -154,7 +154,7 @@ def process_file(df: pd.DataFrame, previous_day_stats, sequence_length: int) -> 
 
     # The return of the closing auction is measured relative to the last closing price at some interval
     closing_price = df.iloc[-1, 0]
-    closing_returns = closing_price / df['close']
+    closing_returns = closing_price / df['close'].iloc[:-1].values - 1
 
     # Normalization is based on the previous day's statistics
     df = (df - previous_day_stats[0]) / previous_day_stats[1]
