@@ -1,11 +1,11 @@
-from models.BaseModel import BaseModel
+from Models.BaseModel import BaseModel
 from torch import nn
 import torch
 
 
 class BaseTransformer(BaseModel):
     """
-    Base class for all the transformer models. It inherits from the BaseModel class.
+    Base class for all the transformer Models. It inherits from the BaseModel class.
     """
     def __init__(self, feature_size: int, sequence_size: int, embedding_size: int, num_heads: int, dropout: float,
                  dim_feedforward: int, num_layers: int, fc_neurons: list[int]):
@@ -23,35 +23,43 @@ class BaseTransformer(BaseModel):
         num_layers : Number of sub-encoder-layers in the encoder
         fc_neurons : Neurons in each fully connected layer after the transformer
         """
+
+        self.feature_size = feature_size
+        self.sequence_size = sequence_size
+        self.embedding_size = embedding_size
+        self.num_heads = num_heads
+        self.dropout = dropout
+        self.dim_feedforward = dim_feedforward
+        self.num_layers = num_layers
+        self.fc_neurons = fc_neurons
+
         super(BaseTransformer, self).__init__(3)
 
+
+    def build_model(self):
         # Embedding layer to higher dimension
-        self.layers.append(nn.Linear(feature_size, embedding_size))
+        self.layers.append(nn.Linear(self.feature_size, self.embedding_size))
 
         # Positional encoding
-        self.layers.append(PositionalEncoding(sequence_size, embedding_size))
+        self.layers.append(PositionalEncoding(self.sequence_size, self.embedding_size))
 
         # Encoder layer
-        encoder_layer = nn.TransformerEncoderLayer(embedding_size, num_heads, dim_feedforward, dropout, batch_first=True)
-
+        encoder_layer = nn.TransformerEncoderLayer(self.embedding_size, self.num_heads, self.dim_feedforward, self.dropout,
+                                                   batch_first=True)
         # Encoder
-        self.layers.append(nn.TransformerEncoder(encoder_layer, num_layers))
+        self.layers.append(nn.TransformerEncoder(encoder_layer, self.num_layers))
 
         # Get the last output
         self.layers.append(LastOutputTransformer())
 
         # Fully connected layers
-        input_size = embedding_size
-        for output_size in fc_neurons:
+        input_size = self.embedding_size
+        for output_size in self.fc_neurons:
             self.layers.append(nn.Linear(input_size, output_size))
             self.layers.append(nn.ReLU())
             input_size = output_size
 
-        # Output layer
-        self.layers.append(nn.Linear(input_size, 1))
-
-        # Saving all the layers
-        self.layers = nn.ModuleList(self.layers)
+        self.output_dim = input_size
 
 class PositionalEncoding(nn.Module):
     """
