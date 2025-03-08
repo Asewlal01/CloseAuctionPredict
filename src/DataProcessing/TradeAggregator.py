@@ -40,11 +40,11 @@ class TradeAggregator:
         Tuple with the opening and closing time of the exchange
         """
         # Get opening and closing time
-        opening = self.exchange_info['Opening'].values[0]
+        opening = self.exchange_info['opening'].values[0]
         opening = pd.to_datetime(opening, format='%H:%M:%S').time()
         self.opening = opening
 
-        closing = self.exchange_info['Closing'].values[0]
+        closing = self.exchange_info['closing'].values[0]
         closing = pd.to_datetime(closing, format='%H:%M:%S').time()
         self.closing = closing
 
@@ -204,6 +204,23 @@ def add_exchange_times(df: pd.DataFrame, exchange_open: pd.Timestamp, exchange_c
 
     return df.sort_index()
 
+def filter_time(df: pd.DataFrame, exchange_open: pd.Timestamp, exchange_close: pd.Timestamp) -> pd.DataFrame:
+    """
+    This function removes trades outside the exchange opening and closing times. These trades are considered
+    to be erroneous.
+
+    Parameters
+    ----------
+    df : Dataframe of the trade data with only the normal trades
+    exchange_open : Opening time of the exchange in the format 'HH:MM:SS'
+    exchange_close : Closing time of the exchange in the format 'HH:MM:SS'
+
+    Returns
+    -------
+    Dataframe with only the trades within the exchange opening and closing times
+    """
+
+    return df[(df['time'].dt.time >= exchange_open) & (df['time'].dt.time <= exchange_close)]
 
 def aggregate_interval(df: pd.DataFrame) -> pd.Series:
     """
@@ -304,6 +321,7 @@ def process_df(df: pd.DataFrame, exchange_open: pd.Timestamp, exchange_close: pd
         return auction_df
 
     normal = add_exchange_times(normal, exchange_open, exchange_close)
+    normal = filter_time(normal, exchange_open, exchange_close)
     resampled = aggregate_trades(normal, interval)
 
     # Removing the day from the index and converting the time to a string
