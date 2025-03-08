@@ -1,4 +1,4 @@
-from models.ReccurentModels.BaseLSTM import BaseLSTM
+from Models.ReccurentModels.BaseLSTM import BaseLSTM
 
 class TradeLSTM(BaseLSTM):
     """
@@ -18,4 +18,6 @@ class TradeLSTM(BaseLSTM):
         lstm_size : Number of LSTM layers
         fc_neurons : Number of nodes in the fully connected layers. Can be a list of integers or a single integer.
         """
-        super(TradeLSTM, self).__init__(2,  hidden_size, lstm_size, fc_neurons)
+        # Trade data has 5 features: close, high, low, open, volume
+        feature_size = 5
+        super(TradeLSTM, self).__init__(feature_size,  hidden_size, lstm_size, fc_neurons)
