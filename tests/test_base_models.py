@@ -42,22 +42,22 @@ def test_base_convolve():
     model = BaseConvolve(1, sequence_size, conv_channels, fc_neurons, kernel_size)
 
     # Multiple Samples
-    X = torch.rand(samples, 1, sequence_size)
+    X = torch.rand(samples, sequence_size, 1)
     assert model(X).shape == (samples, 1)
 
     # Single Sample
-    X = torch.rand(1, sequence_size)
+    X = torch.rand(sequence_size, 1)
     assert model(X).shape == (1, 1)
 
     # Testing with multiple features
     model = BaseConvolve(features, sequence_size, conv_channels, fc_neurons, kernel_size)
 
     # Multiple Samples
-    X = torch.rand(samples, features, sequence_size)
+    X = torch.rand(samples, sequence_size, features)
     assert model(X).shape == (samples, 1)
 
     # Single Sample
-    X = torch.rand(features, sequence_size)
+    X = torch.rand(sequence_size, features)
     assert model(X).shape == (1, 1)
 
 def test_base_lstm():

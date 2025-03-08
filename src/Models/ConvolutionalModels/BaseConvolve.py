@@ -1,5 +1,6 @@
 from Models.BaseModel import BaseModel
 from torch import nn
+import torch
 
 
 class BaseConvolve(BaseModel):
@@ -42,6 +43,9 @@ class BaseConvolve(BaseModel):
         # Making sure that conv_channels and fc_neurons are lists
         self.conv_channels = [self.conv_channels] if type(self.conv_channels) == int else self.conv_channels
         self.fc_neurons = [self.fc_neurons] if type(self.fc_neurons) == int else self.fc_neurons
+
+        # This layer permutes the dimensions of the input tensor by swapping 2nd and 3rd dimensions
+        self.layers.append(PermuteLayer((0, 2, 1)))
 
         # Convolutional Layers
         in_channels = self.feature_size
@@ -94,3 +98,14 @@ class BaseConvolve(BaseModel):
             sequence_size = out_neurons
 
         self.output_dim = sequence_size
+
+class PermuteLayer(nn.Module):
+    """
+    This layer permutes the dimensions of the input tensor.
+    """
+    def __init__(self, dims: tuple[int, ...]) -> None:
+        super().__init__()
+        self.dims = dims
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        return input.permute(*self.dims)
