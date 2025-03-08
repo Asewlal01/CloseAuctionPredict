@@ -1,4 +1,4 @@
-from models.ConvolutionalModels.BaseConvolve import BaseConvolve
+from Models.ConvolutionalModels.BaseConvolve import BaseConvolve
 
 class TradeConvolve(BaseConvolve):
     """
@@ -22,5 +22,7 @@ class TradeConvolve(BaseConvolve):
         dilation : Dilation for the convolutional layers. Assumed to be constant for all layers
         """
 
-        super(TradeConvolve, self).__init__(1, sequence_size, conv_channels, fc_neurons,
+        # Trade data has 5 channels: Open, High, Low, Close, Volume
+        feature_size = 5
+        super(TradeConvolve, self).__init__(feature_size, sequence_size, conv_channels, fc_neurons,
                                             kernel_size, stride, padding, dilation)

@@ -1,10 +1,10 @@
-from models.BaseModel import BaseModel
+from Models.BaseModel import BaseModel
 from torch import nn
 
 
 class BaseConvolve(BaseModel):
     """
-    Base class for all the convolutional models. It inherits from the BaseModel class.
+    Base class for all the convolutional Models. It inherits from the BaseModel class.
     """
 
     def __init__(self, feature_size: int, sequence_size: int, conv_channels: list[int], fc_neurons: list[int],
@@ -24,23 +24,35 @@ class BaseConvolve(BaseModel):
         padding : Padding for the convolutional layers. Assumed to be constant for all layers
         dilation : Dilation for the convolutional layers. Assumed to be constant for all layers
         """
+
+        self.feature_size = feature_size
+        self.sequence_size = sequence_size
+        self.conv_channels = conv_channels
+        self.fc_neurons = fc_neurons
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.padding = padding
+        self.dilation = dilation
+
         expected_dims = 3
         super(BaseConvolve, self).__init__(expected_dims)
 
+    def build_model(self) -> None:
+
         # Making sure that conv_channels and fc_neurons are lists
-        conv_channels = [conv_channels] if type(conv_channels) == int else conv_channels
-        fc_neurons = [fc_neurons] if type(fc_neurons) == int else fc_neurons
+        self.conv_channels = [self.conv_channels] if type(self.conv_channels) == int else self.conv_channels
+        self.fc_neurons = [self.fc_neurons] if type(self.fc_neurons) == int else self.fc_neurons
 
         # Convolutional Layers
-        in_channels = feature_size
-        output_size = sequence_size
-        for out_channels in conv_channels:
+        in_channels = self.feature_size
+        output_size = self.sequence_size
+        for out_channels in self.conv_channels:
             self.layers.append(
-                nn.Conv1d(in_channels, out_channels, kernel_size, stride, padding, dilation)
+                nn.Conv1d(in_channels, out_channels, self.kernel_size, self.stride, self.padding, self.dilation)
             )
 
             # Size reduction from convolution
-            output_size = (output_size + 2 * padding - kernel_size) // stride + 1
+            output_size = (output_size + 2 * self.padding - self.kernel_size) // self.stride + 1
 
             # ReLU Activation
             self.layers.append(
@@ -69,7 +81,7 @@ class BaseConvolve(BaseModel):
         self.layers.append(nn.Flatten())
 
         # Fully Connected self.layers
-        for out_neurons in fc_neurons:
+        for out_neurons in self.fc_neurons:
             # Fully Connected Layer
             self.layers.append(
                 nn.Linear(sequence_size, out_neurons)
@@ -81,13 +93,4 @@ class BaseConvolve(BaseModel):
             )
             sequence_size = out_neurons
 
-        # Output Layer
-        self.layers.append(
-            nn.Linear(sequence_size, 1)
-        )
-        self.layers.append(
-            nn.Sigmoid()
-        )
-
-        # Save the layers
-        self.layers = nn.ModuleList(self.layers)
+        self.output_dim = sequence_size
