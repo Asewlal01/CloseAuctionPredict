@@ -9,7 +9,7 @@ class BaseConvolve(BaseModel):
     """
 
     def __init__(self, feature_size: int, sequence_size: int, conv_channels: list[int], fc_neurons: list[int],
-                 kernel_size: int, stride: int=1, padding: int=0, dilation: int=1):
+                 kernel_size: int, stride: int=1, padding: int=0, dilation: int=1, dropout: float=0.5):
         """
         Initializes the Convolutional Neural Network for predicting the Closing Price of a stock.
 
@@ -24,6 +24,7 @@ class BaseConvolve(BaseModel):
         stride : Stride for the convolutional layers. Assumed to be constant for all layers
         padding : Padding for the convolutional layers. Assumed to be constant for all layers
         dilation : Dilation for the convolutional layers. Assumed to be constant for all layers
+        dropout : Dropout rate to use in the fully connected
         """
 
         self.feature_size = feature_size
@@ -36,7 +37,7 @@ class BaseConvolve(BaseModel):
         self.dilation = dilation
 
         expected_dims = 3
-        super(BaseConvolve, self).__init__(expected_dims)
+        super(BaseConvolve, self).__init__(expected_dims, dropout)
 
     def build_model(self) -> None:
 

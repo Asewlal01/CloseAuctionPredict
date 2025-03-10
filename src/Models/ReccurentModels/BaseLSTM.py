@@ -5,7 +5,8 @@ class BaseLSTM(BaseModel):
     """
     Base class for all the convolutional Models. It inherits from the BaseModel class.
     """
-    def __init__(self, feature_size: int, hidden_size: int, lstm_size: int, fc_neurons: list[int]):
+    def __init__(self, feature_size: int, hidden_size: int, lstm_size: int, fc_neurons: list[int],
+                 dropout: float = 0.5):
         """
         Initializes the LSTM Neural Network for predicting the Closing Price of a stock.
 
@@ -23,7 +24,7 @@ class BaseLSTM(BaseModel):
         self.fc_neurons = fc_neurons
 
         expected_dim = 3
-        super(BaseLSTM, self).__init__(expected_dim)
+        super(BaseLSTM, self).__init__(expected_dim, dropout)
 
 
     def build_model(self) -> None:

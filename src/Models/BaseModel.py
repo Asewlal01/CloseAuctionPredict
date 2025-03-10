@@ -7,17 +7,19 @@ class BaseModel(nn.Module):
     training functionality and other useful methods that are common to all the Models.
     """
 
-    def __init__(self, expected_dim: int):
+    def __init__(self, expected_dim: int, dropout: float = 0.5):
         """
         Initializes the BaseModel class. It should be called by all the classes that inherit from this class.
 
         Parameters
         ----------
         expected_dim : Expected number of dimensions after unsqueezing the input tensor.
+        dropout : Dropout rate to use in the fully connected layers.
         """
         super(BaseModel, self).__init__()
         self.layers = [Unsqueeze(expected_dim)]
         self.output_dim = None
+        self.dropout = dropout
         self.build_model()
         self.output_layer()
 
@@ -54,6 +56,10 @@ class BaseModel(nn.Module):
         """
         if self.output_dim is None:
             raise AttributeError("The attribute `output_dim` is not defined in the model.")
+
+        self.layers.append(
+            nn.Dropout(self.dropout)
+        )
 
         self.layers.append(
             nn.Linear(self.output_dim, 1)

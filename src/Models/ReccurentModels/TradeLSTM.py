@@ -8,7 +8,7 @@ class TradeLSTM(BaseLSTM):
     price of the stock.
     """
 
-    def __init__(self,  hidden_size: int, lstm_size: int, fc_neurons: list[int]):
+    def __init__(self,  hidden_size: int, lstm_size: int, fc_neurons: list[int], dropout: float = 0.5):
         """
         Initializes the LSTM Neural Network.
 
@@ -20,4 +20,4 @@ class TradeLSTM(BaseLSTM):
         """
         # Trade data has 5 features: close, high, low, open, volume
         feature_size = 5
-        super(TradeLSTM, self).__init__(feature_size,  hidden_size, lstm_size, fc_neurons)
+        super(TradeLSTM, self).__init__(feature_size,  hidden_size, lstm_size, fc_neurons, dropout)
