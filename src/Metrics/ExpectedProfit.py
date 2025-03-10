@@ -6,7 +6,7 @@ class ExpectedProfit(nn.Module):
     This metric computes the expected profit of a trading strategy. The optimal threshold can be optimized using during
     training.
     """
-    def __init__(self, k: int=50, init_tau: float=0.5, requires_tau_grad: bool=True, lr: float=1e-3):
+    def __init__(self, k: int=50, init_tau: float=0.5, requires_tau_grad: bool=True, lr: float=1e-4):
         """
         Initialize the ExpectedProfit object.
 
@@ -29,7 +29,8 @@ class ExpectedProfit(nn.Module):
         positions = torch.heaviside(y_pred - self.optimal_tau, values) - torch.heaviside(-y_pred - self.optimal_tau, values)
 
         profit = positions * y_true
-        return profit.mean()
+
+        return profit.mean() / max_profit(y_true)
 
     def smooth_forward(self, y_pred, y_true):
         sig_pos = torch.sigmoid(self.k * (y_pred - self.tau))
@@ -38,7 +39,7 @@ class ExpectedProfit(nn.Module):
 
         profit = positions * y_true
 
-        return profit.mean()
+        return profit.mean() / max_profit(y_true)
 
     def optimize_tau(self, y_pred, y_true, steps=100):
         optimizer = torch.optim.Adam([self.tau], lr=self.lr)
@@ -49,3 +50,6 @@ class ExpectedProfit(nn.Module):
             optimizer.step()
 
         self.optimal_tau = self.tau.item()
+
+def max_profit(y_true):
+    return y_true.abs().mean()
