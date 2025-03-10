@@ -1,5 +1,4 @@
 import torch
-from numpy.ma.core import negative
 from torch import nn
 
 class GMADLLoss(nn.Module):
