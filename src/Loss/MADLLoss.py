@@ -1,16 +1,19 @@
 import torch
 from torch import nn
 
-class MeanAbsoluteDirectionalLoss(nn.Module):
+class MADLLoss(nn.Module):
     """
     Loss function that calculates the mean absolute directional loss between the predicted and the expected values.
     """
     def __init__(self):
-        super(MeanAbsoluteDirectionalLoss, self).__init__()
+        """
+        Initialize the Mean Absolute Directional Loss object.
+        """
+        super(MADLLoss, self).__init__()
 
     def forward(self, y_pred: torch.Tensor, y_true: torch.Tensor) -> torch.Tensor:
         """
-        Forward pass of the loss function.
+        Forward pass of the Mean Absolute Directional Loss.
 
         Parameters
         ----------
