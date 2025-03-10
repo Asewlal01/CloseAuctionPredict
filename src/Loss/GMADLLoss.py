@@ -35,9 +35,9 @@ class GMADLLoss(nn.Module):
         """
         # Calculate the directional loss
         negative_term = -1
-        exponential_term = 1 + torch.exp(-self.a * y_true * y_pred)
+        sigmoid_term = torch.sigmoid(self.a * y_pred * y_true)
         return_term = torch.abs(y_true) ** self.b
 
-        adl = negative_term * (1 / exponential_term - 0.5) * return_term
+        adl = negative_term * (sigmoid_term - 0.5) * return_term
 
         return adl.mean()
