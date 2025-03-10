@@ -19,7 +19,7 @@ class BaseLogisticRegression(BaseModel):
         self.sequence_size = sequence_size
 
         expected_dims = 3
-        super().__init__(expected_dims)
+        super().__init__(expected_dims, 0)
 
     def build_model(self) -> None:
         """
