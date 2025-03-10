@@ -20,11 +20,6 @@ class BaseLogisticRegression(BaseModel):
 
         expected_dims = 3
         super().__init__(expected_dims)
-        #
-        # self.layers.append(nn.Linear(feature_size * sequence_size, 1))
-        #
-        # # Save the layers
-        # self.layers = nn.ModuleList(self.layers)
 
     def build_model(self) -> None:
         """
