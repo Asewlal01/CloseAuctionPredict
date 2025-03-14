@@ -31,17 +31,3 @@ class BaseLogisticRegression(BaseModel):
         # Each time step has feature_size features, hence total features is feature_size * sequence_size
         feature_size = self.feature_size * self.sequence_size
         self.output_dim = feature_size
-
-
-
-class ViewLayer(nn.Module):
-    """
-    Layer designed to reshape a tensor. This is needed because input is typically given as (batch, sequence, features).
-    However, Linear layers require the input to be (batch, features).
-    """
-    def __init__(self):
-        super(ViewLayer, self).__init__()
-
-    def forward(self, x):
-        batch_size = x.shape[0]
-        return x.view(batch_size, -1)
