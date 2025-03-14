@@ -1,6 +1,6 @@
 from Models.BaseModel import BaseModel
 from torch import nn
-import torch
+from Layers.PermuteLayer import PermuteLayer
 
 
 class BaseConvolve(BaseModel):
@@ -99,14 +99,3 @@ class BaseConvolve(BaseModel):
             sequence_size = out_neurons
 
         self.output_dim = sequence_size
-
-class PermuteLayer(nn.Module):
-    """
-    This layer permutes the dimensions of the input tensor.
-    """
-    def __init__(self, dims: tuple[int, ...]) -> None:
-        super().__init__()
-        self.dims = dims
-
-    def forward(self, input: torch.Tensor) -> torch.Tensor:
-        return input.permute(*self.dims)
