@@ -41,6 +41,22 @@ class BaseModel(nn.Module):
             x = layer(x)
         return x
 
+    def predict(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Perform forward pass of the model, and apply sigmoid activation function to the output.
+
+        Parameters
+        ----------
+        x : Input tensor
+
+        Returns
+        -------
+        Output tensor
+
+        """
+        x = self.forward(x)
+        return torch.sigmoid(x)
+
     def build_model(self) -> None:
         """
         Build the model by adding all layers to self.layers. This method should be implemented by all the Models

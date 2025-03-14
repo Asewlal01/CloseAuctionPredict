@@ -9,7 +9,7 @@ class BaseTransformer(BaseModel):
     Base class for all the transformer Models. It inherits from the BaseModel class.
     """
     def __init__(self, feature_size: int, sequence_size: int, embedding_size: int, num_heads: int, dropout: float,
-                 dim_feedforward: int, num_layers: int, fc_neurons: list[int], fc_dropout: float = 0.5):
+                 dim_feedforward: int, num_layers: int, fc_neurons: list[int]):
         """
         Initializes the Transformer Network for predicting the Closing Price of a stock.
 
@@ -23,7 +23,6 @@ class BaseTransformer(BaseModel):
         dim_feedforward : Dimensionality of the feedforward network model in the Encoder Layer
         num_layers : Number of sub-encoder-layers in the encoder
         fc_neurons : Neurons in each fully connected layer after the transformer
-        fc_dropout : Dropout rate for the fully connected layers at the end of the model
         """
 
         self.feature_size = feature_size
@@ -35,7 +34,8 @@ class BaseTransformer(BaseModel):
         self.num_layers = num_layers
         self.fc_neurons = fc_neurons
 
-        super(BaseTransformer, self).__init__(3, fc_dropout)
+        expected_dim = 3
+        super(BaseTransformer, self).__init__(expected_dim)
 
 
     def build_model(self):
@@ -53,6 +53,9 @@ class BaseTransformer(BaseModel):
 
         # Get the last output
         self.layers.append(LastOutputTransformer())
+
+        # Apply dropout
+        self.layers.append(nn.Dropout(self.dropout))
 
         # Fully connected layers
         input_size = self.embedding_size

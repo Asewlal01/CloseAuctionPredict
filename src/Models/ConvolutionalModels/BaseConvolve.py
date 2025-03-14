@@ -35,9 +35,10 @@ class BaseConvolve(BaseModel):
         self.stride = stride
         self.padding = padding
         self.dilation = dilation
+        self.dropout = dropout
 
         expected_dims = 3
-        super(BaseConvolve, self).__init__(expected_dims, dropout)
+        super(BaseConvolve, self).__init__(expected_dims)
 
     def build_model(self) -> None:
 
@@ -84,6 +85,9 @@ class BaseConvolve(BaseModel):
 
         # Flatten the output of the convolutional self.layers
         self.layers.append(nn.Flatten())
+
+        # Dropout Layer
+        self.layers.append(nn.Dropout(self.dropout))
 
         # Fully Connected self.layers
         for out_neurons in self.fc_neurons:

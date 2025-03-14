@@ -23,9 +23,10 @@ class BaseLSTM(BaseModel):
         self.hidden_size = hidden_size
         self.lstm_size = lstm_size
         self.fc_neurons = fc_neurons
+        self.dropout = dropout
 
         expected_dim = 3
-        super(BaseLSTM, self).__init__(expected_dim, dropout)
+        super(BaseLSTM, self).__init__(expected_dim)
 
 
     def build_model(self) -> None:
@@ -39,6 +40,9 @@ class BaseLSTM(BaseModel):
 
         # Add the output state layer
         self.layers.append(LastOutputLSTM())
+
+        # Dropout layer
+        self.layers.append(nn.Dropout(self.dropout))
 
         # Add fully connected layers
         input_size = self.hidden_size

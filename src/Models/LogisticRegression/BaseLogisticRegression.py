@@ -1,5 +1,6 @@
 from Models.BaseModel import BaseModel
 from torch import nn
+from Layers.ViewLayer import ViewLayer
 
 class BaseLogisticRegression(BaseModel):
     """
@@ -19,7 +20,7 @@ class BaseLogisticRegression(BaseModel):
         self.sequence_size = sequence_size
 
         expected_dims = 3
-        super().__init__(expected_dims, 0)
+        super().__init__(expected_dims)
 
     def build_model(self) -> None:
         """
