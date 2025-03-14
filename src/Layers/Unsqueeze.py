@@ -1,6 +1,6 @@
-from torch import nn
+import torch
 
-class Unsqueeze(nn.Module):
+class Unsqueeze(torch.nn.Module):
     """
     Layer designed to unsqueeze a tensor. This is needed when the input is not given as a batch, which may cause
     errors in the forward pass. Dimensions go from (N,) to (1, N) for example.
@@ -19,7 +19,7 @@ class Unsqueeze(nn.Module):
         super(Unsqueeze, self).__init__()
         self.expected_dim = expected_dim
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         # If only one sample is given, add a batch dimension
         if x.dim() == self.expected_dim - 1:
             return x.unsqueeze(0)

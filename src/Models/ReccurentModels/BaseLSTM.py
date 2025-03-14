@@ -1,5 +1,6 @@
 from Models.BaseModel import BaseModel
 from torch import nn
+from Layers.LastOutputLSTM import LastOutputLSTM
 
 class BaseLSTM(BaseModel):
     """
@@ -51,14 +52,3 @@ class BaseLSTM(BaseModel):
 
         self.output_dim = input_size
 
-class LastOutputLSTM(nn.Module):
-    """
-    Layer designed to extract the output state from a LSTM layer. The LSTM layer returns (output, (h_n, c_n)) where
-    only the output is needed for the task. More specifically, we only need the last output of the sequence.
-    """
-    def __init__(self, multiple_layers: int=1):
-        super(LastOutputLSTM, self).__init__()
-        self.multiple_layers = multiple_layers
-
-    def forward(self, x):
-        return x[0][:, -1]
