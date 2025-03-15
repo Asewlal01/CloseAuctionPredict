@@ -25,5 +25,5 @@ class MADLLoss(nn.Module):
         Loss value
         """
         # Calculate the directional loss
-        adl = -1 * torch.sign(y_pred * y_true) * torch.abs(y_true)
-        return adl.mean()
+        adl = torch.sign(y_pred * y_true) * torch.abs(y_true)
+        return -adl.mean()
