@@ -15,12 +15,12 @@ for i, exchange in enumerate(os.listdir(trade_dir)):
         continue
 
     exchange_path = os.path.join(trade_dir, exchange)
-    aggregator = TradeAggregator(save_dir, exchange_info, '1min')
+    aggregator = TradeAggregator(save_dir, exchange_info, aggregation_interval)
 
     for stock in tqdm(os.listdir(exchange_path)):
         stock_path = os.path.join(exchange_path, stock)
         aggregator.aggregate_stock(stock_path)
 
-    print(f'Finished {i/len(os.listdir(trade_dir)) * 100:.2f}% of exchanges')
+    print(f'Finished {(i+1)/len(os.listdir(trade_dir)) * 100:.2f}% of exchanges')
 
 
