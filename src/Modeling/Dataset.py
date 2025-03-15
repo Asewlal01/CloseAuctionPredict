@@ -25,13 +25,14 @@ class Dataset:
         self.validation_dir = validation_dir
         self.test_dir = test_dir
 
-    def get_train_data(self, horizon: int=0) -> tuple[torch.Tensor, torch.Tensor]:
+    def get_train_data(self, horizon: int=0, sequence_size: int=420) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Get the training data.
 
         Parameters
         ----------
         horizon : Number of time steps to predict.
+        sequence_size : Number of sequence steps in the input data
 
         Returns
         -------
@@ -40,9 +41,9 @@ class Dataset:
         if self.X_train is None:
             self.X_train, self.y_train = load_set(self.train_dir)
 
-        return select_horizon(self.X_train, self.y_train, horizon)
+        return select_horizon(self.X_train, self.y_train, horizon, sequence_size)
 
-    def get_validation_data(self, horizon: int=0) -> tuple[torch.Tensor, torch.Tensor]:
+    def get_validation_data(self, horizon: int=0, sequence_size: int=420) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Get the validation data.
 
@@ -57,9 +58,9 @@ class Dataset:
         if self.X_val is None:
             self.X_val, self.y_val = load_set(self.validation_dir)
 
-        return select_horizon(self.X_val, self.y_val, horizon)
+        return select_horizon(self.X_val, self.y_val, horizon, sequence_size)
 
-    def get_test_data(self, horizon: int=0) -> tuple[torch.Tensor, torch.Tensor]:
+    def get_test_data(self, horizon: int=0, sequence_size: int=420) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Get the test data.
 
@@ -74,7 +75,7 @@ class Dataset:
         if self.X_test is None:
             self.X_test, self.y_test = load_set(self.test_dir)
 
-        return select_horizon(self.X_test, self.y_test, horizon)
+        return select_horizon(self.X_test, self.y_test, horizon, sequence_size)
 
     def clear_memory(self):
         """
@@ -129,7 +130,7 @@ def load_set(dataset_dir) -> tuple[torch.Tensor, torch.Tensor]:
 
     return X, y
 
-def select_horizon(X, y, horizon: int=0) -> tuple[torch.Tensor, torch.Tensor]:
+def select_horizon(X, y, horizon: int=0, sequence_size: int=420) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Select a horizon from the dataset.
     Parameters
@@ -137,15 +138,16 @@ def select_horizon(X, y, horizon: int=0) -> tuple[torch.Tensor, torch.Tensor]:
     X : Input variables.
     y : Target variables.
     horizon : Number of time steps to select.
+    sequence_size : Number of sequence steps in the input data
 
     Returns
     -------
     Tuple containing the selected horizon from the input and target variables.
     """
     if horizon == 0:
-        return X, y[:, -1].unsqueeze(1)
+        return X[:, -sequence_size:, :], y[:, -1].unsqueeze(1)
     else:
-        return X[:, :-horizon, :], y[:, -1-horizon].unsqueeze(1)
+        return X[:, -sequence_size-horizon:-horizon, :], y[:, -1-horizon].unsqueeze(1)
 
 
 
