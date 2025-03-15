@@ -17,6 +17,7 @@ class BaseModel(nn.Module):
         expected_dim : Expected number of dimensions after unsqueezing the input tensor.
         """
         super(BaseModel, self).__init__()
+        self.device = 'cpu'
         self.layers: list[nn.Module] = [Unsqueeze(expected_dim)]
         self.output_dim: int = 0
         self.build_model()
@@ -69,7 +70,7 @@ class BaseModel(nn.Module):
         Adds the output layer to the model. This method requires self.output_dim to be defined, as it is the dimension
         of the layer before the output layer.
         """
-        if self.output_dim is 0:
+        if self.output_dim == 0:
             raise AttributeError("The attribute `output_dim` is not defined in the model.")
 
         self.layers.append(
@@ -77,3 +78,11 @@ class BaseModel(nn.Module):
         )
 
         self.layers = nn.ModuleList(self.layers)
+
+    def to(self, *args, **kwargs):
+        """
+        Moves and/or casts the parameters and buffers.
+        """
+        super().to(*args, **kwargs)
+        self.device = next(self.parameters()).device
+        return self
