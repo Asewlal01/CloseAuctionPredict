@@ -120,7 +120,7 @@ def get_key(date: pd.Timestamp, train_date: pd.Timestamp, val_date: pd.Timestamp
     else:
         return 'test'
 
-def statistics(df: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
+def statistics(df: pd.DataFrame) -> dict[str, list[ndarray]]:
     """
     Get statistics for a DataFrame
 
@@ -132,10 +132,17 @@ def statistics(df: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
     -------
     Dictionary with statistics
     """
-    return df.mean(), df.std()
+    stats = {}
+    for column in df.columns:
+        mean = df[column].expanding().mean()
+        std = df[column].expanding().std()
+        std = std.fillna(1)
 
+        stats[column] = [mean.values, std.values]
 
-def process_file(df: pd.DataFrame, previous_day_stats, sequence_length: int) -> dict[str, np.ndarray]:
+    return stats
+
+def process_file(df: pd.DataFrame, statistics, sequence_length: int) -> dict[str, np.ndarray]:
     """
     Process a file to get the data in the correct format. The data is normalized based on the previous day's statistics.
 
@@ -153,22 +160,24 @@ def process_file(df: pd.DataFrame, previous_day_stats, sequence_length: int) -> 
     df = df.iloc[-sequence_length - 1:]
 
     # The return of the closing auction is measured relative to the last closing price at some interval
-    closing_price = df.iloc[-1, 0]
-    closing_returns = closing_price / df['close'].iloc[:-1].values - 1
+    close = df['close'].values
+    closing_return = (close[-1] / close[:-1] - 1).copy()
 
-    # Normalization is based on the previous day's statistics
-    df = (df - previous_day_stats[0]) / previous_day_stats[1]
+    # # Normalization is based on the previous day's statistics
+    # df = (df - previous_day_stats[0]) / previous_day_stats[1]
 
     # Removing the closing auction
     df = df.iloc[:-1]
 
-    result = {'closing_returns': closing_returns}
+    result = {'closing_returns': closing_return}
     for column in df.columns:
-        result[column] = df[column].values
+        mean = statistics[column][0][-sequence_length - 1:-1]
+        std = statistics[column][1][-sequence_length - 1:-1]
+        result[column] = (df[column].values - mean) / std
 
     return result
 
-def process_stock(stock_path: str, sequence_size: int) -> list[Any] | list[list[Timestamp | dict[str, ndarray]]]:
+def process_stock(stock_path: str, sequence_size: int) -> list[list[Timestamp | dict[str, np.ndarray]]]:
     """
     Process all trades of a given stock
 
@@ -188,24 +197,23 @@ def process_stock(stock_path: str, sequence_size: int) -> list[Any] | list[list[
     # Files are not sorted
     files.sort()
 
-    # Normalization is based on previous day without considering auctions
-    previous_day = pd.read_parquet(os.path.join(stock_path, files[0]))
-    previous_day_stats = statistics(previous_day.iloc[1:-1])
-
     dataset = []
-    for file in files[1:]:
+    max_returns = np.zeros(sequence_size)
+    for file in files:
         file_path = os.path.join(stock_path, file)
         date = file.split('.')[0]
         date = pd.to_datetime(date)
 
         df = pd.read_parquet(file_path)
         current_stats = statistics(df.iloc[1:-1])
-        result = process_file(df, previous_day_stats, sequence_size)
+        result = process_file(df, current_stats, sequence_size)
 
         dataset.append([date, result])
 
-
         previous_day_stats = current_stats
+
+    # Normalization of the closing returns
+    # dataset = normalize_returns(dataset, max_returns, train_date)
 
     return dataset
 
