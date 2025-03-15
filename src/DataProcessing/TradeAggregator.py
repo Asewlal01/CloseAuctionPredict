@@ -80,6 +80,17 @@ class TradeAggregator:
             pool.starmap(process_file, items)
 
 
+def time_increment(opening_time, exchange_opening):
+    timestamp = pd.Timestamp(opening_time).time()
+
+    delta1 = pd.Timedelta(hours=timestamp.hour, minutes=timestamp.minute, seconds=timestamp.second, microseconds=timestamp.microsecond)
+    delta2 = pd.Timedelta(hours=exchange_opening.hour, minutes=exchange_opening.minute, seconds=exchange_opening.second, microseconds=exchange_opening.microsecond)
+
+    time_adjustment = delta2 - delta1
+
+    return time_adjustment
+
+
 def move_to_opening(df: pd.DataFrame, exchange_open: pd.Timestamp) -> pd.DataFrame:
     """
     This function increments the time of the dataframe to match the opening time. Exchanges denote their opening times in a
@@ -99,12 +110,11 @@ def move_to_opening(df: pd.DataFrame, exchange_open: pd.Timestamp) -> pd.DataFra
 
     # Incrementing requires opening auction row
     opening_auction_row = df[df['flag'] == 'AUCTION'].iloc[0]
-    opening_auction_hour = opening_auction_row['time'].hour
+    opening_auction_time = opening_auction_row['time']
 
-    # We only need the hour of the opening time to increment the time
-    opening_hour = exchange_open.hour
-    increment = opening_auction_hour - opening_hour
-    df['time'] = df['time'] - pd.Timedelta(hours=increment)
+    # We want to make sure that the opening time is exactly the same as the exchange opening time
+    adjustment = time_increment(opening_auction_time, exchange_open)
+    df['time'] = df['time'] + adjustment
 
     return df
 
@@ -164,9 +174,9 @@ def get_auction_data(df: pd.DataFrame, exchange_close: pd.Timestamp) -> pd.DataF
     closing_quantity = closing_rows['quantity'].sum()
 
     # OCHL and VWAP are the same as the auction price
-    df = pd.DataFrame(columns=['open', 'close', 'high', 'low', 'vwap', 'volume'])
-    df.loc['opening'] = [opening_price] * 5 + [opening_quantity]
-    df.loc['closing'] = [closing_price] * 5 + [closing_quantity]
+    df = pd.DataFrame(columns=['open', 'close', 'high', 'low', 'volume'])
+    df.loc['opening'] = [opening_price] * 4 + [opening_quantity]
+    df.loc['closing'] = [closing_price] * 4 + [closing_quantity]
 
     return df
 
@@ -188,12 +198,12 @@ def add_exchange_times(df: pd.DataFrame, exchange_open: pd.Timestamp, exchange_c
     day = df['time'].dt.date.iloc[0]
     tz = df['time'].dt.tz
 
-    # Checking if opening time is needed
-    opening_day = pd.Timestamp(f'{day} {exchange_open}', tz=tz)
-    opening_index = df.index[0] - 1
-    first_time = df['time'].iloc[0]
-    if first_time.hour != opening_day.hour or first_time.minute != opening_day.minute:
-        df.loc[opening_index] = [opening_day, np.nan, np.nan, 'NORMAL']
+    # # Checking if opening time is needed
+    # opening_day = pd.Timestamp(f'{day} {exchange_open}', tz=tz)
+    # opening_index = df.index[0] - 1
+    # first_time = df['time'].iloc[0]
+    # if first_time.hour != opening_day.hour or first_time.minute != opening_day.minute:
+    #     df.loc[opening_index] = [opening_day, np.nan, np.nan, 'NORMAL']
 
     # Checking if closing time is needed
     last_time = df['time'].iloc[-1]
@@ -237,16 +247,16 @@ def aggregate_interval(df: pd.DataFrame) -> pd.Series:
     """
     # No point in aggregating if the dataframe is empty
     if df['quantity'].sum() == 0:
-        return pd.Series({'open': np.nan, 'close': np.nan, 'high': np.nan, 'low': np.nan, 'vwap': np.nan, 'volume': np.nan})
+        return pd.Series({'open': np.nan, 'close': np.nan, 'high': np.nan, 'low': np.nan, 'volume': np.nan})
 
     open = df.iloc[0]['price']
     close = df.iloc[-1]['price']
     high = df['price'].max()
     low = df['price'].min()
     volume = df['quantity'].sum()
-    vwap = (df['price'] * df['quantity']).sum() / volume
+    # vwap = (df['price'] * df['quantity']).sum() / volume
 
-    return pd.Series({'open': open, 'close': close, 'high': high, 'low': low, 'vwap': vwap, 'volume': volume})
+    return pd.Series({'open': open, 'close': close, 'high': high, 'low': low, 'volume': volume})
 
 def aggregate_trades(df: pd.DataFrame, interval: str) -> pd.DataFrame:
     """
@@ -278,16 +288,15 @@ def fix_missing(df: pd.DataFrame) -> pd.DataFrame:
     Dataframe with missing values filled in
     """
     # The VWAP and close are filled with the previous value
-    df['vwap'] = df['vwap'].ffill()
     df['close'] = df['close'].ffill()
 
     # No trades mean zero volume
     df['volume'] = df['volume'].fillna(0)
 
     # The open, close, high and low are filled with vwap of the current minute
-    df['open'] = df['open'].fillna(df['vwap'])
-    df['high'] = df['high'].fillna(df['vwap'])
-    df['low'] = df['low'].fillna(df['vwap'])
+    df['open'] = df['open'].fillna(df['close'])
+    df['high'] = df['high'].fillna(df['close'])
+    df['low'] = df['low'].fillna(df['close'])
 
     return df
 
