@@ -106,7 +106,7 @@ def convert_to_time(df: pd.DataFrame) -> pd.DataFrame:
     df['t'] = pd.to_datetime(df['t'], format='mixed')
     return df
 
-def remove_rows(df: pd.DataFrame) -> pd.DataFrame:
+def filter_rows(df: pd.DataFrame) -> pd.DataFrame:
     """
     Remove rows which are not normal or auction trades.
 
@@ -123,6 +123,42 @@ def remove_rows(df: pd.DataFrame) -> pd.DataFrame:
         df['flag'].isin(['AUCTION', 'NORMAL'])
     ]
 
+def combine_rows(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Combine rows which occurred at the same time and have the same trading price.
+
+    Parameters
+    ----------
+    df : Dataframe containing the trade data.
+
+    Returns
+    -------
+    Dataframe with combined rows.
+    """
+
+    return df.groupby(['t', 'price'], as_index=False).agg(
+        {
+            'quantity': 'sum',
+            'flag': 'first'
+        }
+    ).reset_index()
+
+def has_auctions(df: pd.DataFrame) -> bool:
+    """
+    This function checks if the given dataframe has a opening and closing auction.
+
+    Parameters
+    ----------
+    df : Dataframe containing the trade data.
+
+    Returns
+    -------
+    Boolean indicating if the dataframe has opening and closing auction.
+    """
+    auction_df = df[df['flag'] == 'AUCTION']
+    n_auction_prices = auction_df['price'].nunique()
+    return n_auction_prices == 2
+
 def group_by_day(df: pd.DataFrame, save_dir) -> dict[str, pd.DataFrame]:
     """
     Group the trade data by day. The keys will be the save path for the parquet file.
@@ -138,9 +174,13 @@ def group_by_day(df: pd.DataFrame, save_dir) -> dict[str, pd.DataFrame]:
     """
     groups = df.groupby(df['t'].dt.date)
 
-    grouped_dict = {
-        os.path.join(save_dir, f'{day.strftime("%Y-%m-%d")}.parquet'): group for day, group in groups
-    }
+    grouped_dict = {}
+    for day, group in groups:
+        if not has_auctions(group):
+            continue
+
+        key = os.path.join(save_dir, f'{day.strftime("%Y-%m-%d")}.parquet')
+        grouped_dict[key] = group
 
     return grouped_dict
 
@@ -201,6 +241,26 @@ def stock_info(stock_id: int, exchange_df: pd.DataFrame) -> tuple[str, str]:
 
     return exchange_name, stock_name
 
+def apply_transformations(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    This function applies all the transformations to the trade data. The transformations are:
+    - Load the data
+    - Convert the time column to a datetime object
+    - Remove rows which are not normal or auction trades
+    - Combine rows which occurred at the same time and have the same trading price
+    Parameters
+    ----------
+    df : Dataframe containing the trade data.
+
+    Returns
+    -------
+    Dataframe with the transformations applied.
+    """
+    df = convert_to_time(df)
+    df = filter_rows(df)
+    df = combine_rows(df)
+    return df
+
 def process_file(file: str, save_dir: str, exchange_df: pd.DataFrame) -> dict[str, pd.DataFrame]:
     """
     Process a single zipped trade data file. This function starts by unzipping the file, then loads the data,
@@ -219,13 +279,12 @@ def process_file(file: str, save_dir: str, exchange_df: pd.DataFrame) -> dict[st
     """
 
     df = load_from_gzip(file)
-    df = convert_to_time(df)
-    df = remove_rows(df)
+    df = apply_transformations(df)
 
     stock_id = get_id(file)
     exchange_name, stock_name = stock_info(stock_id, exchange_df)
 
-    # Create a directory for the exchange if it does not exist
+    # Exchange directory
     save_dir = os.path.join(save_dir, exchange_name)
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)

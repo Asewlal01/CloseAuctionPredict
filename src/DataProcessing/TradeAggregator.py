@@ -149,20 +149,8 @@ def get_auction_data(df: pd.DataFrame, exchange_close: pd.Timestamp) -> pd.DataF
     -------
     Dataframe with only the auction trades
     """
-    # Empty df
-    if df.empty:
-        return df
-
     opening = df.iloc[0]
     closing = df.iloc[-1]
-
-    # On normal days the closing auction time is after the closing time
-    if closing['time'].time() < exchange_close:
-        return pd.DataFrame()
-
-    # If the opening and closing price are the same then one of the prices is missing
-    if opening['price'] == closing['price']:
-        return pd.DataFrame()
 
     # Get the auction price and quantity
     opening_price = opening['price']
@@ -173,10 +161,10 @@ def get_auction_data(df: pd.DataFrame, exchange_close: pd.Timestamp) -> pd.DataF
     closing_rows = df[df['price'] == closing_price]
     closing_quantity = closing_rows['quantity'].sum()
 
-    # OCHL and VWAP are the same as the auction price
-    df = pd.DataFrame(columns=['open', 'close', 'high', 'low', 'volume'])
-    df.loc['opening'] = [opening_price] * 4 + [opening_quantity]
-    df.loc['closing'] = [closing_price] * 4 + [closing_quantity]
+    # For auctions, the vwap is the same as the price
+    df = pd.DataFrame(columns=['vwap', 'volume'])
+    df.loc['opening'] = [opening_price, opening_quantity]
+    df.loc['closing'] = [closing_price, closing_quantity]
 
     return df
 
@@ -247,16 +235,12 @@ def aggregate_interval(df: pd.DataFrame) -> pd.Series:
     """
     # No point in aggregating if the dataframe is empty
     if df['quantity'].sum() == 0:
-        return pd.Series({'open': np.nan, 'close': np.nan, 'high': np.nan, 'low': np.nan, 'volume': np.nan})
+        return pd.Series({'vwap': np.nan, 'volume': 0})
 
-    open = df.iloc[0]['price']
-    close = df.iloc[-1]['price']
-    high = df['price'].max()
-    low = df['price'].min()
     volume = df['quantity'].sum()
-    # vwap = (df['price'] * df['quantity']).sum() / volume
+    vwap = (df['price'] * df['quantity']).sum() / volume
 
-    return pd.Series({'open': open, 'close': close, 'high': high, 'low': low, 'volume': volume})
+    return pd.Series({'vwap': vwap, 'volume': volume})
 
 def aggregate_trades(df: pd.DataFrame, interval: str) -> pd.DataFrame:
     """
@@ -287,16 +271,11 @@ def fix_missing(df: pd.DataFrame) -> pd.DataFrame:
     -------
     Dataframe with missing values filled in
     """
-    # The VWAP and close are filled with the previous value
-    df['close'] = df['close'].ffill()
+    # No trades means no change in price, hence vwap did not change
+    df['vwap'] = df['vwap'].ffill()
 
     # No trades mean zero volume
     df['volume'] = df['volume'].fillna(0)
-
-    # The open, close, high and low are filled with vwap of the current minute
-    df['open'] = df['open'].fillna(df['close'])
-    df['high'] = df['high'].fillna(df['close'])
-    df['low'] = df['low'].fillna(df['close'])
 
     return df
 
@@ -363,6 +342,7 @@ def process_file(file: str, save_dir: str, exchange_open: pd.Timestamp, exchange
     """
 
     df = pd.read_parquet(file)
+    df.set_index('index', inplace=True)
     df.columns = ['time', 'price', 'quantity', 'flag']
     day = file.split('/')[-1].split('.')[0]
 
