@@ -1,8 +1,13 @@
+from typing import List
+
+import numpy as np
 import pandas as pd
 import gzip
 import datetime
 import os
 import multiprocessing
+
+from pandas import Timestamp
 from tqdm import tqdm
 
 class TradeSplitter:
@@ -231,7 +236,7 @@ def filter_normal_trades(df: pd.DataFrame, opening_time: pd.Timestamp, closing_t
     return df[
         (df['flag'] == 'AUCTION') |
         ((df['t'] >= opening_time) & (df['t'] <= closing_time))
-    ]
+    ].reset_index(drop=True)
 
 def has_auction_and_normal(df: pd.DataFrame) -> bool:
     """
@@ -284,6 +289,59 @@ def has_opening_and_closing(df: pd.DataFrame, closing_timestamp: pd.Timestamp) -
 
     return first_is_auction and last_is_auction and last_trade_after_closing
 
+def create_empty_row(timestamp: pd.Timestamp) -> list[Timestamp | float | float | str]:
+    """
+    Create an empty row with the given timestamp. This row will contain the following columns:
+    - t: The timestamp of the trade.
+    - price: The price of the trade (Nan).
+    - quantity: The quantity of the trade (0).
+    - flag: The flag indicating the type of trade (NORMAL).
+
+    Parameters
+    ----------
+    timestamp : Timestamp for the empty row.
+
+    Returns
+    -------
+    Dataframe containing the empty row.
+    """
+    return [timestamp, np.nan, 0.0, 'NORMAL']
+
+def add_empty_trades(df: pd.DataFrame, opening_timestamp: pd.Timestamp, closing_timestamp: pd.Timestamp) -> pd.DataFrame:
+    """
+    Add empty trades to the dataframe just after the opening and just before the closing time.
+    This is done to ensure that when aggregating the dataset, aggregation starts from the opening time
+    and ends at the closing time.
+
+    Parameters
+    ----------
+    df : Dataframe containing the trade data.
+    opening_timestamp : Opening time of continuous trading for the exchange.
+    closing_timestamp : Closing time of continuous trading for the exchange.
+
+    Returns
+    -------
+    Dataframe with empty trades added.
+    """
+    # We need the normal trades to find which indices and timestamps to use
+    normal_trades = df[df['flag'] == 'NORMAL']
+
+    # The empty opening rows is placed just before the first normal trade
+    opening_index = normal_trades.index[0] - 0.5
+    opening_timestamp += pd.Timedelta(microseconds=1)
+
+    # The empty closing rows is placed just after the last normal trade
+    closing_index = normal_trades.index[-1] + 0.5
+    closing_timestamp -= pd.Timedelta(microseconds=1)
+
+    opening_row = create_empty_row(opening_timestamp)
+    closing_row = create_empty_row(closing_timestamp)
+
+    # We use 0.5 to make sure that we do not overwrite the existing rows, but still are between normal and auction rows
+    df.loc[opening_index] = opening_row
+    df.loc[closing_index] = closing_row
+
+    return df.sort_index()
 
 def process_by_group(df: pd.DataFrame, opening_time: str, closing_time: str, timezone, save_path: str) -> None:
     """
@@ -311,9 +369,8 @@ def process_by_group(df: pd.DataFrame, opening_time: str, closing_time: str, tim
             continue
 
         if has_opening_and_closing(filtered_group, closing_timestamp):
-            # Set time as the index
-            filtered_group.set_index('t', inplace=True)
-            filtered_group.to_parquet(f'{save_path}/{date}.parquet', engine="pyarrow")
+            filtered_group = add_empty_trades(filtered_group, opening_timestamp, closing_timestamp)
+            filtered_group.to_parquet(f'{save_path}/{date}.parquet', engine="pyarrow", index=False)
 
 def process_file(file: str, stock_info: pd.DataFrame, exchange_times: pd.DataFrame, save_path: str) -> None:
     """
