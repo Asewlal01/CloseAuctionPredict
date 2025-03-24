@@ -2,13 +2,14 @@ import pandas as pd
 import os
 import multiprocessing
 import numpy as np
+from tqdm import tqdm
 
 
 class TradeAggregator:
     """
     Class to aggregate all trades over a day to a given interval.
     """
-    def __init__(self, save_dir: str, exchange_info: pd.Series, interval: str, n_cores: int = None):
+    def __init__(self, save_dir: str, interval: str, n_cores: int = None):
         """
         Initialize the TradeAggregator object.
 
@@ -19,7 +20,6 @@ class TradeAggregator:
         n_cores : Number of cores to use for multiprocessing. Default is None, which uses all available cores
         """
         self.save_dir = save_dir
-        self.exchange_info = exchange_info
         self.interval = interval
         self.n_cores = n_cores if n_cores is not None else multiprocessing.cpu_count()
 
@@ -27,198 +27,75 @@ class TradeAggregator:
             print(f'Creating directory {self.save_dir}')
             os.makedirs(self.save_dir)
 
-        self.opening = None
-        self.closing = None
-        self.exchange_times()
-
-    def exchange_times(self):
+    def aggregate_all(self, trade_path: str) -> None:
         """
-        This function sets the opening and closing time of the exchange based on the exchange row.
-
-        Returns
-        -------
-        Tuple with the opening and closing time of the exchange
-        """
-        # Get opening and closing time
-        opening = self.exchange_info['opening'].values[0]
-        opening = pd.to_datetime(opening, format='%H:%M:%S').time()
-        self.opening = opening
-
-        closing = self.exchange_info['closing'].values[0]
-        closing = pd.to_datetime(closing, format='%H:%M:%S').time()
-        self.closing = closing
-
-    def aggregate_stock(self, stock_path: str) -> None:
-        """
-        Aggregate all trades over a day to a given interval for a single stock.
+        Aggregate all trades for each stock within trade_path to the given interval.
 
         Parameters
         ----------
-        stock_path : Path to the stock file to aggregate
+        trade_path : Directory containing the trade data for each stock. This directory should contain subdirectories
+        for each stock, which contain the trade data files as parquet files.
 
         Returns
         -------
         None
         """
 
-        stock_name = stock_path.split('/')[-1]
-        save_dir_stock = os.path.join(self.save_dir, stock_name)
-        if not os.path.exists(save_dir_stock):
-            os.makedirs(save_dir_stock)
+        # Get all stock
+        stocks = os.listdir(trade_path)
+        stocks.sort()
 
-        files = [os.path.join(stock_path, file) for file in os.listdir(stock_path)]
-        items = [(file, save_dir_stock, self.opening, self.closing, self.interval) for file in files]
-
-        # No need for pooling if there is only one core
-        if self.n_cores == 1:
-            print(f'No Pooling for {stock_name}')
-            for item in items:
-                process_file(*item)
-            return
-
+        items = [(os.path.join(trade_path, stock), self.interval, os.path.join(self.save_dir, stock)) for stock in stocks]
         with multiprocessing.Pool(self.n_cores) as pool:
-            pool.starmap(process_file, items)
+            _ = list(
+                tqdm(pool.imap(unpack_args, items), total=len(items))
+            )
 
+def unpack_args(args):
+    process_stock(*args)
 
-def time_increment(opening_time, exchange_opening):
-    timestamp = pd.Timestamp(opening_time).time()
-
-    delta1 = pd.Timedelta(hours=timestamp.hour, minutes=timestamp.minute, seconds=timestamp.second, microseconds=timestamp.microsecond)
-    delta2 = pd.Timedelta(hours=exchange_opening.hour, minutes=exchange_opening.minute, seconds=exchange_opening.second, microseconds=exchange_opening.microsecond)
-
-    time_adjustment = delta2 - delta1
-
-    return time_adjustment
-
-
-def move_to_opening(df: pd.DataFrame, exchange_open: pd.Timestamp) -> pd.DataFrame:
+def merge_auction_data(auction_rows: pd.DataFrame) -> pd.DataFrame:
     """
-    This function increments the time of the dataframe to match the opening time. Exchanges denote their opening times in a
-    timezone which may be different from the timezone of the data.
+    Merge all auction rows into a single dataframe with one row
 
     Parameters
     ----------
-    df : Dataframe with the trade data
-    exchange_open : Opening time of the exchange in the format 'HH:MM:SS'
+    auction_rows : DataFrame containing the auction data.
 
     Returns
     -------
-    Dataframe with the time incremented to the opening time
+    Series containing the merged auction data.
     """
-    if not (df['flag'] == 'AUCTION').any():
-        return pd.DataFrame()
+    return pd.DataFrame({
+        'price': [auction_rows['price'].mean()],
+        'quantity': [auction_rows['quantity'].sum()],
+    })
 
-    # Incrementing requires opening auction row
-    opening_auction_row = df[df['flag'] == 'AUCTION'].iloc[0]
-    opening_auction_time = opening_auction_row['time']
 
-    # We want to make sure that the opening time is exactly the same as the exchange opening time
-    adjustment = time_increment(opening_auction_time, exchange_open)
-    df['time'] = df['time'] + adjustment
-
-    return df
-
-def auction_normal_split(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+def get_auction_data(df: pd.DataFrame) -> pd.DataFrame:
     """
-    This function splits the trade data into auction and normal trades.
+    Get the auction data from the trade data.
 
     Parameters
     ----------
-    df : Dataframe with the trade data
-
+    df : DataFrame containing the trade data.
     Returns
     -------
-    Normal and Auction trade dataframes
+    DataFrame containing the aggregated trade data.
     """
+    auction_df = df[df['flag'] == 'AUCTION']
 
-    auction = df[df['flag'] == 'AUCTION'].copy()
-    normal = df[df['flag'] == 'NORMAL'].copy()
+    # Same auctions have a difference of 1 in their indices
+    idx = auction_df.index.diff().argmax()
+    opening_auction = auction_df.iloc[:idx]
+    closing_auction = auction_df.iloc[idx:]
 
-    return auction, normal
+    opening_merged = merge_auction_data(opening_auction)
+    closing_merged = merge_auction_data(closing_auction)
 
-def get_auction_data(df: pd.DataFrame, exchange_close: pd.Timestamp) -> pd.DataFrame:
-    """
-    This function returns the auction data from the trade data with only auction trades.
-
-    Parameters
-    ----------
-    df : Dataframe with the trade data with only auction trades
-    exchange_close : Closing time of the exchange in the format 'HH:MM:SS'
-
-    Returns
-    -------
-    Dataframe with only the auction trades
-    """
-    opening = df.iloc[0]
-    closing = df.iloc[-1]
-
-    # Get the auction price and quantity
-    opening_price = opening['price']
-    opening_rows = df[df['price'] == opening_price]
-    opening_quantity = opening_rows['quantity'].sum()
-
-    closing_price = closing['price']
-    closing_rows = df[df['price'] == closing_price]
-    closing_quantity = closing_rows['quantity'].sum()
-
-    # For auctions, the vwap is the same as the price
-    df = pd.DataFrame(columns=['vwap', 'volume'])
-    df.loc['opening'] = [opening_price, opening_quantity]
-    df.loc['closing'] = [closing_price, closing_quantity]
-
-    return df
-
-def add_exchange_times(df: pd.DataFrame, exchange_open: pd.Timestamp, exchange_close: pd.Timestamp) -> pd.DataFrame:
-    """
-    This function adds the opening and closing time of the exchange to the dataframe.
-
-    Parameters
-    ----------
-    df : Dataframe of the trade data with only the normal trades
-    exchange_open : Opening time of the exchange in the format 'HH:MM:SS'
-    exchange_close : Closing time of the exchange in the format 'HH:MM:SS'
-
-    Returns
-    -------
-    Dataframe with the opening and closing time of the exchange added
-    """
-
-    day = df['time'].dt.date.iloc[0]
-    tz = df['time'].dt.tz
-
-    # # Checking if opening time is needed
-    # opening_day = pd.Timestamp(f'{day} {exchange_open}', tz=tz)
-    # opening_index = df.index[0] - 1
-    # first_time = df['time'].iloc[0]
-    # if first_time.hour != opening_day.hour or first_time.minute != opening_day.minute:
-    #     df.loc[opening_index] = [opening_day, np.nan, np.nan, 'NORMAL']
-
-    # Checking if closing time is needed
-    last_time = df['time'].iloc[-1]
-    closing_day = pd.Timestamp(f'{day} {exchange_close}', tz=tz) - pd.Timedelta(seconds=1)
-    closing_index = df.index[-1] + 1
-    if last_time.hour != closing_day.hour or last_time.minute != closing_day.minute:
-        df.loc[closing_index] = [closing_day, np.nan, np.nan, 'NORMAL']
-
-    return df.sort_index()
-
-def filter_time(df: pd.DataFrame, exchange_open: pd.Timestamp, exchange_close: pd.Timestamp) -> pd.DataFrame:
-    """
-    This function removes trades outside the exchange opening and closing times. These trades are considered
-    to be erroneous.
-
-    Parameters
-    ----------
-    df : Dataframe of the trade data with only the normal trades
-    exchange_open : Opening time of the exchange in the format 'HH:MM:SS'
-    exchange_close : Closing time of the exchange in the format 'HH:MM:SS'
-
-    Returns
-    -------
-    Dataframe with only the trades within the exchange opening and closing times
-    """
-
-    return df[(df['time'].dt.time >= exchange_open) & (df['time'].dt.time <= exchange_close)]
+    # Reset index removes the normal index and replaces it with opening and closing
+    return pd.concat([opening_merged, closing_merged],
+                     keys=['opening', 'closing']).reset_index(level=1, drop=True)
 
 def aggregate_interval(df: pd.DataFrame) -> pd.Series:
     """
@@ -233,14 +110,14 @@ def aggregate_interval(df: pd.DataFrame) -> pd.Series:
     -------
     Pandas series with the aggregated values
     """
-    # No point in aggregating if the dataframe is empty
+    # Nothing to aggregate if the dataframe is empty or there are empty trades
     if df['quantity'].sum() == 0:
-        return pd.Series({'vwap': np.nan, 'volume': 0})
+        return pd.Series({'price': np.nan, 'quantity': 0})
 
     volume = df['quantity'].sum()
     vwap = (df['price'] * df['quantity']).sum() / volume
 
-    return pd.Series({'vwap': vwap, 'volume': volume})
+    return pd.Series({'price': vwap, 'quantity': volume})
 
 def aggregate_trades(df: pd.DataFrame, interval: str) -> pd.DataFrame:
     """
@@ -255,13 +132,14 @@ def aggregate_trades(df: pd.DataFrame, interval: str) -> pd.DataFrame:
     -------
     Dataframe of resampled trade data
     """
-    resample = df.resample(interval, on='time', label='left')
+    resample = df.resample(interval, on='t', label='left')
 
     return resample.apply(aggregate_interval)
 
 def fix_missing(df: pd.DataFrame) -> pd.DataFrame:
     """
-    This function fills in missing values in the aggregated trade data.
+    When there is no trade within the given interval, the price is set to nan. This function sets those function to
+    the last known price. Missing values for the volume are set to 0.
 
     Parameters
     ----------
@@ -272,81 +150,70 @@ def fix_missing(df: pd.DataFrame) -> pd.DataFrame:
     Dataframe with missing values filled in
     """
     # No trades means no change in price, hence vwap did not change
-    df['vwap'] = df['vwap'].ffill()
+    df['price'] = df['price'].ffill()
 
     # No trades mean zero volume
-    df['volume'] = df['volume'].fillna(0)
+    df['quantity'] = df['quantity'].fillna(0)
 
     return df
 
-def process_df(df: pd.DataFrame, exchange_open: pd.Timestamp, exchange_close: pd.Timestamp,
-               interval: str) -> pd.DataFrame:
+def process_trade_file(trade_file: str, interval: str) -> pd.DataFrame:
     """
-    This function processes all the trade data for a single day. It returns a df with the resampled data and the auction data.
+    Process a single trade file to aggregate the trades to the given interval.
 
     Parameters
     ----------
-    df : Dataframe with the trade data
-    exchange_open : Opening time of the exchange in the format 'HH:MM:SS'
-    exchange_close : Closing time of the exchange in the format 'HH:MM:SS'
-    interval : Aggregation interval using a format that is supported by Pandas resample function
+    trade_file : Path to the trade file.
+    interval : Interval to aggregate the trade data to.
 
     Returns
     -------
-    Dataframe with the resampled data and the auction data
+    DataFrame containing the aggregated trade data.
     """
+    df = pd.read_parquet(trade_file)
 
-    df = move_to_opening(df, exchange_open)
-    # No auction data
-    if df.empty:
-        return df
+    # Get auction data
+    auction_data = get_auction_data(df)
 
-    auction, normal = auction_normal_split(df)
-    auction_df = get_auction_data(auction, exchange_close)
-
-    # Miss opening or closing auction
-    if auction_df.empty:
-        return auction_df
-
-    normal = add_exchange_times(normal, exchange_open, exchange_close)
-    normal = filter_time(normal, exchange_open, exchange_close)
-    resampled = aggregate_trades(normal, interval)
+    # Aggregation only uses normal trades
+    df = df[df['flag'] == 'NORMAL']
+    aggregated_trades = aggregate_trades(df, interval)
 
     # Removing the day from the index and converting the time to a string
-    resampled.index = resampled.index.strftime('%H:%M:%S')
+    aggregated_trades.index = aggregated_trades.index.strftime('%H:%M:%S')
+    indices = aggregated_trades.index.tolist()
+    indices = ['opening'] + indices + ['closing']
 
-    # This sets the opening auction at the beginning and closing auction at the end of the resampled data
-    resampled = pd.concat([
-        auction_df.iloc[[0]],
-        resampled,
-        auction_df.iloc[[1]]
-    ])
+    # Concatenate the aggregated trades with the auction data
+    aggregated_trades = pd.concat([aggregated_trades, auction_data])
+    aggregated_trades = aggregated_trades.loc[indices]
 
-    return fix_missing(resampled)
+    # Fix missing values is called after merging to ensure that opening price can also be used
+    aggregated_trades = fix_missing(aggregated_trades)
 
-def process_file(file: str, save_dir: str, exchange_open: pd.Timestamp, exchange_close: pd.Timestamp,
-                 interval: str) -> None:
+    return aggregated_trades
+
+def process_stock(stock_path: str, interval: str, save_path: str) -> None:
     """
+    Process all the trade files for a single stock to aggregate the trades to the given interval. All aggregated trades
+    are saved to the save path with the date as the filename.
 
     Parameters
     ----------
-    file : Parquet file with trade data at some day of a stock.
-    save_dir : Directory to save the aggregated trade data files.
-    exchange_open : Opening time of the exchange in the format 'HH:MM:SS'
-    exchange_close : Closing time of the exchange in the format 'HH:MM:SS'
-    interval : Aggregation interval using a format that is supported by Pandas resample function
+    stock_path : Path to the stock directory containing the trade files.
+    interval : Aggregation interval using a format that is supported by Pandas resample function.
+    save_path : Path to save the aggregated trade data.
 
     Returns
     -------
     None
     """
+    dates = os.listdir(stock_path)
+    dates.sort()
 
-    df = pd.read_parquet(file)
-    df.set_index('index', inplace=True)
-    df.columns = ['time', 'price', 'quantity', 'flag']
-    day = file.split('/')[-1].split('.')[0]
+    os.makedirs(save_path, exist_ok=True)
+    for date in dates:
+        date_path = os.path.join(stock_path, date)
+        aggregated_df = process_trade_file(date_path, interval)
+        aggregated_df.to_parquet(os.path.join(save_path, date), index=True)
 
-    df = process_df(df, exchange_open, exchange_close, interval)
-
-    if not df.empty:
-        df.to_parquet(f'{save_dir}/{day}.parquet')
