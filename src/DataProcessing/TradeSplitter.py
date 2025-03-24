@@ -1,83 +1,59 @@
 import pandas as pd
 import gzip
+import datetime
 import os
 import multiprocessing
-from itertools import islice
 from tqdm import tqdm
 
 class TradeSplitter:
-    """
-    Class to load all zipped trade data files from a given directory. This class splits one trade file into multiple
-    files based on the day. The data is then saved in a new directory.
-    """
-    def __init__(self, trades_dir: str, save_dir: str, stock_info_path: str, n_cores: int = None, core_files: int = 1):
+    def __init__(self, stock_info_path, exchange_times_path, save_path, n_cores: int=-1):
         """
-        Initialize the TradeSplitter object.
+        Initialize the Trades object.
 
         Parameters
         ----------
-        trades_dir : Directory containing the zipped trade data files.
-        save_dir : Directory to save the unzipped trade data files.
-        stock_info_path : Path to the file containing the stock information.
-        n_cores : Number of cores to use for multiprocessing. Default is None, which uses all available cores
-        core_files : Number of files to process per core per batch. Default is 1
+        stock_info_path : Path to file which has list of stocks with their corresponding traded exchanges.
+        exchange_times_path : Path to file which has opening and closing times of continuous trading for each exchange.
+        n_cores : Number of cores to use for processing. Default is -1, which uses all available cores.
         """
-        self.trades_dir = trades_dir
-        self.save_dir = save_dir
+        self.stocks = pd.read_csv(stock_info_path)
+        self.exchange_times = pd.read_csv(exchange_times_path, keep_default_na=False)
+        self.save_path = save_path
+        self.n_cores = n_cores
 
-        self.stock_info_df = pd.read_csv(stock_info_path)
-
-        self.n_cores = n_cores if n_cores is not None else multiprocessing.cpu_count()
-        self.core_files = core_files
-        self.batch_size = self.n_cores * self.core_files
-
-        if not os.path.exists(self.save_dir):
-            print(f'Creating directory {self.save_dir}')
-            os.makedirs(self.save_dir)
-
-    def split_batch(self, files: list[str]) -> None:
+    def process_all(self, trade_path: str) -> None:
         """
-        Splits a batch of zipped trade data files by day and saves them in a new directory.
+        Process all trade data files in the specified directory.
 
         Parameters
         ----------
-        files : Files to process in this batch
+        trade_path : Path to the directory containing the trade data files.
 
         Returns
         -------
         None
         """
+        # Get all files in the directory
+        files = os.listdir(trade_path)
+        items = [
+            (os.path.join(trade_path, file), self.stocks, self.exchange_times, self.save_path) for file in files
+        ]
 
-        # Get dictionary with all dataframes
-        items = [(file, self.save_dir, self.stock_info_df) for file in files]
         with multiprocessing.Pool(self.n_cores) as pool:
-            dict_list = pool.starmap(process_file, items)
-        combined_dict = merge_dictionaries(dict_list)
+            _ = list(
+                tqdm(pool.imap(unpack_args, items), total=len(items))
+            )
 
-        # Each core saves its assigned DataFrames
-        dict_splits = split_dict(combined_dict, self.n_cores)
-        with multiprocessing.Pool(self.n_cores) as pool:
-            pool.map(save_files, dict_splits)
-
-    def split_all(self) -> None:
-        """
-        Splits all the zipped trade data files by day and saves them in a new directory.
-
-        Returns
-        -------
-        None
-        """
-
-        all_files = [os.path.join(self.trades_dir, f) for f in os.listdir(self.trades_dir) if f.endswith(".gz")]
-
-        file_batches = [all_files[i:i + self.batch_size] for i in range(0, len(all_files), self.batch_size)]
-
-        for batch in tqdm(file_batches):
-            self.split_batch(batch)
+def unpack_args(args):
+    return process_file(*args)
 
 def load_from_gzip(zip_file: str) -> pd.DataFrame:
     """
-    Load a zipped trade data file.
+    Load a zipped trade data file. The returned dataframe has the following columns:
+    - time: The time of the trade.
+    - price: The price of the trade.
+    - quantity: The quantity of the trade.
+    - flag: The flag indicating the type of trade (e.g., AUCTION, NORMAL).
 
     Parameters
     ----------
@@ -88,8 +64,60 @@ def load_from_gzip(zip_file: str) -> pd.DataFrame:
     Dataframe containing the trade data.
     """
     with gzip.open(zip_file, 'rt') as f:
-        df = pd.read_csv(f, header=0, names=['time', 'price', 'quantity', 'flag'], engine='pyarrow')
+        df = pd.read_csv(f, header=0, names=['t', 'price', 'quantity', 'flag'], engine='pyarrow')
     return df
+
+def get_name_and_exchange(zip_file: str, stock_info) -> tuple[str, str]:
+    """
+    Get the exchange and name of the stock from the zipped file name. The name is in format:
+    trade_data_<begin_date>_<end_date>_<id>.gz
+
+    Parameters
+    ----------
+    zip_file : File name of the zipped trade data file.
+    stock_info : Dataframe containing stock information.
+
+    Returns
+    -------
+    Name of stock and exchange it is traded on.
+    """
+    # Converts trade_data_<begin_date>_<end_date>_<id>.gz to <id>.gz
+    id_with_extension = zip_file.split('_')[-1]
+    # Converts <id>.gz to <id>
+    id = id_with_extension.split('.')[0]
+    id = int(id)
+
+    stock_row = stock_info[stock_info['syd'] == id]
+    if stock_row.empty:
+        raise ValueError(f"Stock with id {id} not found in stock information.")
+
+    bb = stock_row['bb'].values[0]
+    name, exchange, _ = bb.split(' ')
+
+    return name, exchange
+
+def get_opening_and_closing_times(exchange: str, exchange_times: pd.DataFrame) -> tuple[str, str, str]:
+    """
+    Get the opening and closing times of continuous trading for the given exchange.
+
+    Parameters
+    ----------
+    exchange : Name of the exchange.
+    exchange_times : Dataframe containing opening and closing times of continuous trading for each exchange.
+
+    Returns
+    -------
+    Tuple containing the opening and closing times.
+    """
+    row = exchange_times[exchange_times['bb'] == exchange]
+    if row.empty:
+        raise ValueError(f"Exchange {exchange} not found in exchange times.")
+
+    opening_time = row['opening'].values[0]
+    closing_time = row['closing'].values[0]
+    timezone = row['timezones'].values[0]
+
+    return opening_time, closing_time, timezone
 
 def convert_to_time(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -118,12 +146,11 @@ def filter_rows(df: pd.DataFrame) -> pd.DataFrame:
     -------
     Dataframe with only normal and auction trades.
     """
-
     return df[
         df['flag'].isin(['AUCTION', 'NORMAL'])
     ]
 
-def combine_rows(df: pd.DataFrame) -> pd.DataFrame:
+def merge_rows(df: pd.DataFrame) -> pd.DataFrame:
     """
     Combine rows which occurred at the same time and have the same trading price.
 
@@ -135,17 +162,17 @@ def combine_rows(df: pd.DataFrame) -> pd.DataFrame:
     -------
     Dataframe with combined rows.
     """
-
     return df.groupby(['t', 'price'], as_index=False).agg(
         {
             'quantity': 'sum',
             'flag': 'first'
         }
-    ).reset_index()
+    ).reset_index(drop=True)
 
-def has_auctions(df: pd.DataFrame) -> bool:
+
+def process_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     """
-    This function checks if the given dataframe has a opening and closing auction.
+    Process the trade data dataframe. This function calls all the other processing functions in order.
 
     Parameters
     ----------
@@ -153,194 +180,170 @@ def has_auctions(df: pd.DataFrame) -> bool:
 
     Returns
     -------
-    Boolean indicating if the dataframe has opening and closing auction.
-    """
-    auction_df = df[df['flag'] == 'AUCTION']
-    n_auction_prices = auction_df['price'].nunique()
-    return n_auction_prices == 2
-
-def group_by_day(df: pd.DataFrame, save_dir) -> dict[str, pd.DataFrame]:
-    """
-    Group the trade data by day. The keys will be the save path for the parquet file.
-
-    Parameters
-    ----------
-    df : Dataframe containing the trade data.
-    save_dir : Directory to save the parquet files.
-
-    Returns
-    -------
-    Dictionary containing the trade data grouped by day.
-    """
-    groups = df.groupby(df['t'].dt.date)
-
-    grouped_dict = {}
-    for day, group in groups:
-        if not has_auctions(group):
-            continue
-
-        key = os.path.join(save_dir, f'{day.strftime("%Y-%m-%d")}.parquet')
-        grouped_dict[key] = group
-
-    return grouped_dict
-
-def get_id(file_name: str) -> int:
-    """
-    Get the id corresponding to the stock from the file name.
-
-    Parameters
-    ----------
-    file_name : Name of the file.
-
-    Returns
-    -------
-    ID of the stock
-    """
-    # ID is after the last underscore
-    stock_id = file_name.split('_')[-1]
-
-    # removes file extension
-    return int(
-        stock_id.split('.')[0]
-    )
-
-def get_exchange_name(stock_bloomberg: str) -> str:
-    """
-    Get the exchange name from the stock bloomberg name.
-
-    Parameters
-    ----------
-    stock_bloomberg : Name of the stock.
-
-    Returns
-    -------
-    Name of the exchange.
-    """
-    exchange = stock_bloomberg.split(' ')[1]
-    return exchange
-
-def stock_info(stock_id: int, exchange_df: pd.DataFrame) -> tuple[str, str]:
-    """
-    Get the exchange and stock name from the id.
-
-    Parameters
-    ----------
-    stock_id : ID of the stock.
-    exchange_df : Dataframe containing the exchange data.
-
-    Returns
-    -------
-    Tuple containing the exchange and stock name.
-    """
-    # Finding the row that corresponds to the stock_id
-    stock_row = exchange_df[exchange_df['syd'] == stock_id]
-
-    stock_bloomberg = stock_row['bb'].values[0]
-    exchange_name = get_exchange_name(stock_bloomberg)
-    stock_name = stock_row['name'].values[0]
-
-    return exchange_name, stock_name
-
-def apply_transformations(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    This function applies all the transformations to the trade data. The transformations are:
-    - Load the data
-    - Convert the time column to a datetime object
-    - Remove rows which are not normal or auction trades
-    - Combine rows which occurred at the same time and have the same trading price
-    Parameters
-    ----------
-    df : Dataframe containing the trade data.
-
-    Returns
-    -------
-    Dataframe with the transformations applied.
+    Dataframe with processed trade data.
     """
     df = convert_to_time(df)
     df = filter_rows(df)
-    df = combine_rows(df)
+    df = merge_rows(df)
+
     return df
 
-def process_file(file: str, save_dir: str, exchange_df: pd.DataFrame) -> dict[str, pd.DataFrame]:
+def convert_to_timestamp(date: datetime.date, opening_time: str, closing_time: str,
+                         timezone: str) -> tuple[pd.Timestamp, pd.Timestamp]:
     """
-    Process a single zipped trade data file. This function starts by unzipping the file, then loads the data,
-    converts the time column to a datetime object, removes rows which are not normal or auction trades, groups the data
-    by day, and then returns a dictionary where the keys are the save paths for the parquet files.
+    Convert the opening and closing times to a timestamp object by attaching the date to the time. The timestamp is
+    also converted to UTC by using the timezone information.
 
     Parameters
     ----------
-    file : Name of the zipped trade data file.
-    save_dir : Directory to save the unzipped trade data files.
-    exchange_df : Dataframe containing the exchange data.
+    date : Datetime object to be converted.
+    opening_time : Opening time of continuous trading for the exchange.
+    closing_time : Closing time of continuous trading for the exchange.
+    timezone : Timezone of the exchange.
 
     Returns
     -------
-    Dictionary containing the trade data grouped by day.
+    Timestamp object.
     """
+    opening_timestamp = pd.Timestamp(f'{date} {opening_time}', tz=timezone)
+    closing_timestamp = pd.Timestamp(f'{date} {closing_time}', tz=timezone)
 
-    df = load_from_gzip(file)
-    df = apply_transformations(df)
+    # Convert to UTC
+    opening_timestamp = opening_timestamp.tz_convert('UTC')
+    closing_timestamp = closing_timestamp.tz_convert('UTC')
 
-    stock_id = get_id(file)
-    exchange_name, stock_name = stock_info(stock_id, exchange_df)
+    return opening_timestamp, closing_timestamp
 
-    # Exchange directory
-    save_dir = os.path.join(save_dir, exchange_name)
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
-
-    # Create a directory for the stock if it does not exist
-    stock_name = stock_name.replace(' ', '_')
-    save_dir = os.path.join(save_dir, stock_name)
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
-
-    return group_by_day(df, save_dir)
-
-def merge_dictionaries(dict_list: list[dict[str, pd.DataFrame]]) -> dict[str, pd.DataFrame]:
+def filter_normal_trades(df: pd.DataFrame, opening_time: pd.Timestamp, closing_time: pd.Timestamp) -> pd.DataFrame:
     """
-    Merge multiple dictionaries into one.
+    Filter out normal trades that are before the opening time or after the closing time.
 
     Parameters
     ----------
-    dict_list : List of dictionaries to merge.
+    df : Dataframe containing the trade data.
+    opening_time : Opening time of continuous trading for the exchange.
+    closing_time : Closing time of continuous trading for the exchange.
 
     Returns
     -------
-    Merged dictionary.
+    Dataframe with auction trades and filtered normal trades.
     """
-    merged_dict = {}
-    for d in dict_list:
-        merged_dict.update(d)
-    return merged_dict
+    return df[
+        (df['flag'] == 'AUCTION') |
+        ((df['t'] >= opening_time) & (df['t'] <= closing_time))
+    ]
 
-def split_dict(d: dict, n: int) -> list[dict]:
+def has_auction_and_normal(df: pd.DataFrame) -> bool:
     """
-    Splits a dictionary into n roughly equal parts.
+    Check if the dataframe contains both auction and normal trades.
 
     Parameters
     ----------
-    d : Dictionary to split.
-    n : Number of parts to split the dictionary into.
+    df : Dataframe containing the trade data.
 
     Returns
     -------
-    List of dictionaries.
+    bool : True if the dataframe contains both auction and normal trades, False otherwise.
     """
-    it = iter(d.items())
-    return [{k: v for k, v in islice(it, len(d) // n + (i < len(d) % n))} for i in range(n)]
 
-def save_files(file_dict: dict[str, pd.DataFrame]) -> None:
+    if df.empty:
+        return False
+
+    # Check if there is at least one auction row
+    has_auction = (df['flag'] == 'AUCTION').any()
+    # Check if there is at least one normal row
+    has_normal = (df['flag'] == 'NORMAL').any()
+
+    return has_auction and has_normal
+
+
+def has_opening_and_closing(df: pd.DataFrame, closing_timestamp: pd.Timestamp) -> bool:
     """
-    Save the trade data to parquet files.
+    Check if the dataframe has an opening and closing auction trade.
+    The first and last rows of the dataframe should be auction trades as these are the first and last trades of the day
+    respectively.
 
     Parameters
     ----------
-    file_dict : Dictionary containing the trade data.
+    df : Dataframe containing the trade data.
+    closing_timestamp : Closing time of continuous trading for the exchange.
+
+    Returns
+    -------
+    bool : True if the dataframe contains auction trades, False otherwise.
+    """
+    # The first and last rows of the dataframe should be auction trades
+    first_trade = df.iloc[0]
+    last_trade = df.iloc[-1]
+
+    first_is_auction = first_trade['flag'] == 'AUCTION'
+    last_is_auction = last_trade['flag'] == 'AUCTION'
+
+    # The last trade should be after the closing time
+    last_trade_after_closing = last_trade['t'] > closing_timestamp
+
+    return first_is_auction and last_is_auction and last_trade_after_closing
+
+
+def process_by_group(df: pd.DataFrame, opening_time: str, closing_time: str, timezone, save_path: str) -> None:
+    """
+    Process the grouped data of a given stock. This grouping is based on the day of the trade.
+
+    Parameters
+    ----------
+    df : Dataframe containing the trade data.
+    opening_time : Opening time of continuous trading for the exchange.
+    closing_time : Closing time of continuous trading for the exchange.
+    timezone : Timezone of the exchange.
+    save_path : Path to save the processed data.
 
     Returns
     -------
     None
     """
-    for save_path, df in file_dict.items():
-        df.to_parquet(save_path, index=False)
+    date_groups = df.groupby(df['t'].dt.date)
+
+    for date, group in date_groups:
+        opening_timestamp, closing_timestamp = convert_to_timestamp(date, opening_time, closing_time, timezone)
+        filtered_group = filter_normal_trades(group, opening_timestamp, closing_timestamp)
+
+        if not has_auction_and_normal(filtered_group):
+            continue
+
+        if has_opening_and_closing(filtered_group, closing_timestamp):
+            # Set time as the index
+            filtered_group.set_index('t', inplace=True)
+            filtered_group.to_parquet(f'{save_path}/{date}.parquet', engine="pyarrow")
+
+def process_file(file: str, stock_info: pd.DataFrame, exchange_times: pd.DataFrame, save_path: str) -> None:
+    """
+    Process a trade data file.
+
+    Parameters
+    ----------
+    file : Path to the trade data file.
+    stock_info : Dataframe containing stock information.
+    exchange_times : Dataframe containing opening and closing times of continuous trading for each exchange.
+    save_path : Path to save the processed data.
+
+    Returns
+    -------
+    None
+    """
+
+    # Loading
+    df = load_from_gzip(file)
+    name, exchange = get_name_and_exchange(file, stock_info)
+    opening_time, closing_time, timezone = get_opening_and_closing_times(exchange, exchange_times)
+
+    # Global processing
+    df = process_dataframe(df)
+
+    # Processing per day and saving
+    save_path = f'{save_path}/{name}'
+    os.makedirs(save_path, exist_ok=True)
+    process_by_group(df, opening_time, closing_time, timezone, save_path)
+
+
+
+
