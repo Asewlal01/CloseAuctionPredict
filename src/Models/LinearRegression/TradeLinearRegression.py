@@ -1,6 +1,6 @@
-from Models.LogisticRegression.BaseLogisticRegression import BaseLogisticRegression
+from Models.LinearRegression.BaseLinearRegression import BaseLinearRegression
 
-class TradeLogisticRegression(BaseLogisticRegression):
+class TradeLinearRegression(BaseLinearRegression):
     """
     Logistic Regression model for predicting the direction of the stock price.
     """
@@ -14,4 +14,4 @@ class TradeLogisticRegression(BaseLogisticRegression):
         """
         # Trade data has 5 features: Open, High, Low, Close, Volume
         feature_size = 2
-        super(TradeLogisticRegression, self).__init__(feature_size, sequence_size)
+        super().__init__(feature_size, sequence_size)
