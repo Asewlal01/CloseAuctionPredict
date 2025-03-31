@@ -23,7 +23,7 @@ class BaseModel(nn.Module):
 
         # Fully connected layers
         self.fc_layers: list[nn.Module] = []
-        self.fc_neurons = None
+        self.fc_neurons: list[int] = []
 
         self.output_dim: int = 0
         self.build_model()
@@ -90,7 +90,7 @@ class BaseModel(nn.Module):
         # Add two to the input dimension because we are concatenating the input tensor with z
         self.output_dim = self.output_dim + 2
         if self.fc_neurons is None:
-            pass
+            return
 
         input_dim = self.output_dim
         for out_neurons in self.fc_neurons:

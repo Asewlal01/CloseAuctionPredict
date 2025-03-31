@@ -38,7 +38,7 @@ class BaseConvolve(BaseModel):
         self.dropout = dropout
 
         expected_dims = 3
-        super(BaseConvolve, self).__init__(expected_dims)
+        super().__init__(expected_dims)
 
     def build_model(self) -> None:
 
@@ -65,14 +65,6 @@ class BaseConvolve(BaseModel):
                 nn.ReLU()
             )
 
-            # Max Pooling
-            self.layers.append(
-                nn.MaxPool1d(2)
-            )
-
-            # Size reduction from pooling
-            output_size = (output_size - 2) // 2 + 1
-
             # Last output size is the number of channels
             in_channels = out_channels
 
@@ -88,18 +80,5 @@ class BaseConvolve(BaseModel):
 
         # Dropout Layer
         self.layers.append(nn.Dropout(self.dropout))
-
-        # Fully Connected self.layers
-        for out_neurons in self.fc_neurons:
-            # Fully Connected Layer
-            self.layers.append(
-                nn.Linear(sequence_size, out_neurons)
-            )
-
-            # ReLU Activation
-            self.layers.append(
-                nn.ReLU()
-            )
-            sequence_size = out_neurons
 
         self.output_dim = sequence_size

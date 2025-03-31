@@ -44,15 +44,5 @@ class BaseLSTM(BaseModel):
         # Dropout layer
         self.layers.append(nn.Dropout(self.dropout))
 
-        # Add fully connected layers
-        input_size = self.hidden_size
-        for output_size in self.fc_neurons:
-            # Add the layer
-            self.layers.append(nn.Linear(input_size, output_size))
-            # Add the activation function
-            self.layers.append(nn.ReLU())
-            # Update the input size
-            input_size = output_size
-
-        self.output_dim = input_size
+        self.output_dim = self.hidden_size
 

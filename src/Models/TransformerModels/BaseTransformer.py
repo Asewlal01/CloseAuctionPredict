@@ -58,10 +58,4 @@ class BaseTransformer(BaseModel):
         self.layers.append(nn.Dropout(self.dropout))
 
         # Fully connected layers
-        input_size = self.embedding_size
-        for output_size in self.fc_neurons:
-            self.layers.append(nn.Linear(input_size, output_size))
-            self.layers.append(nn.ReLU())
-            input_size = output_size
-
-        self.output_dim = input_size
+        self.output_dim = self.embedding_size
