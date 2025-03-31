@@ -2,7 +2,7 @@ from Models.BaseModel import BaseModel
 from torch import nn
 from Layers.ViewLayer import ViewLayer
 
-class BaseLogisticRegression(BaseModel):
+class BaseLinearRegression(BaseModel):
     """
     Base class for all the Logistic Regression Models. It inherits from the BaseModel class.
     """
