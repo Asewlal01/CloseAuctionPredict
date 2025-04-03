@@ -97,6 +97,13 @@ def get_name_and_exchange(zip_file: str, stock_info) -> tuple[str, str]:
     bb = stock_row['bb'].values[0]
     name, exchange, _ = bb.split(' ')
 
+    # Some names contain a slash in them, hence we need to replace it with an underscore
+    if '/' in name:
+        name = name.replace('/', '_')
+
+    # Add the exchange to the name since same stocks can be traded on different exchanges
+    name = f'{name}_{exchange}'
+
     return name, exchange
 
 def get_opening_and_closing_times(exchange: str, exchange_times: pd.DataFrame) -> tuple[str, str, str]:
