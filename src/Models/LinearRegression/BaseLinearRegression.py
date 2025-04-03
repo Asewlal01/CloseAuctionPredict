@@ -1,5 +1,4 @@
 from Models.BaseModel import BaseModel
-from torch import nn
 from Layers.ViewLayer import ViewLayer
 
 class BaseLinearRegression(BaseModel):
@@ -19,7 +18,7 @@ class BaseLinearRegression(BaseModel):
         self.feature_size = feature_size
         self.sequence_size = sequence_size
 
-        expected_dims = 3
+        expected_dims = 2
         super().__init__(expected_dims)
 
     def build_model(self) -> None:
