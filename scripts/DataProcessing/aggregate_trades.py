@@ -1,4 +1,4 @@
-from DataProcessing.TradeAggregator2 import TradeAggregator
+from DataProcessing.TradeAggregator import TradeAggregator
 
 trade_dir = 'data/split_trades'
 save_dir = 'data/aggregated_trades'
