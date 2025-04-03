@@ -25,11 +25,9 @@ class ProfitCalculator(nn.Module):
 
         if find_thresholds:
             self.optimizer = torch.optim.Adam(self.parameters(), lr=lr)
-            self.short_threshold = nn.Parameter(short_threshold)
-            self.long_threshold = nn.Parameter(long_threshold)
-        else:
-            self.short_threshold = short_threshold
-            self.long_threshold = long_threshold
+
+        self.short_threshold = nn.Parameter(short_threshold, requires_grad=find_thresholds)
+        self.long_threshold = nn.Parameter(long_threshold, requires_grad=find_thresholds)
 
     def forward(self, y_pred, y_true):
         """
@@ -44,8 +42,9 @@ class ProfitCalculator(nn.Module):
         -------
         Mean profit made by the strategy
         """
+
         profits = compute_profit(y_pred, y_true, self.short_threshold.item(), self.long_threshold.item())
-        return profits.mean()
+        return profits.mean() / maximum_profit(y_true)
 
     def approximated_profit(self, y_pred, y_true):
         """
@@ -121,7 +120,7 @@ def compute_profit(y_pred, y_true, short_threshold, long_threshold):
     The profit made by the strategy.
     """
     # Heaviside function needs values when the input is zero, hence we give it a value of zero.
-    values = torch.Tensor([0])
+    values = torch.tensor([0], dtype=y_pred.dtype, device=y_pred.device)
 
     # A short position corresponds to -1 and a long position corresponds to 1.
     short_positions = torch.heaviside(short_threshold - y_pred, values)
@@ -129,6 +128,20 @@ def compute_profit(y_pred, y_true, short_threshold, long_threshold):
     positions = long_positions - short_positions
 
     return positions * y_true
+
+def maximum_profit(y_true):
+    """
+    This function computes the maximum profit possible mean profit for a given set of true values.
+
+    Parameters
+    ----------
+    y_true : True values.
+
+    Returns
+    -------
+    The maximum profit that can be made.
+    """
+    return y_true.abs().mean()
 
 def approximated_profit(y_pred, y_true, short_threshold, long_threshold):
     """
