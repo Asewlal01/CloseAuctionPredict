@@ -180,6 +180,7 @@ def split_to_groups(file: str, stock_info: pd.DataFrame, exchange_times: pd.Data
             continue
 
         if TradeSplitter.has_opening_and_closing(filtered_group, closing_timestamp):
+            filtered_group = TradeSplitter.add_empty_trades(filtered_group, opening_timestamp, closing_timestamp)
             date = date.strftime('%Y-%m-%d')
             groups_to_keep[date] = filtered_group
 
