@@ -24,6 +24,6 @@ class TradeConvolve(BaseConvolve):
         """
 
         # Trade data has 5 channels: Open, High, Low, Close, Volume
-        feature_size = 5
+        feature_size = 2
         super(TradeConvolve, self).__init__(feature_size, sequence_size, conv_channels, fc_neurons,
                                             kernel_size, stride, padding, dilation, dropout)

@@ -22,6 +22,6 @@ class TradeTransformer(BaseTransformer):
         """
 
         # Trade data has 5 channels: Open, High, Low, Close, Volume
-        feature_size = 5
-        super(TradeTransformer, self).__init__(feature_size, sequence_size, embedding_size, num_heads, dropout,
-                                              dim_feedforward, num_layers, fc_neurons, fc_dropout)
+        feature_size = 2
+        super().__init__(feature_size, sequence_size, embedding_size, num_heads, dropout,
+                                              dim_feedforward, num_layers, fc_neurons)
