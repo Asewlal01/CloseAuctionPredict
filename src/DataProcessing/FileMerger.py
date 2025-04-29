@@ -7,7 +7,7 @@ datatype = dict[str, pd.DataFrame]
 
 
 class FileMerger:
-    def __init__(self, trade_file_path: str, lob_file_path: str, interval: str):
+    def __init__(self, trade_file_path: str, lob_file_path: str):
         """
         Initialize the FileMerger with trade and limit order book processors.
 
@@ -15,10 +15,9 @@ class FileMerger:
         ----------
         trade_file_path : Path to the trade file to be processed.
         lob_file_path : Path to the limit order book file to be processed.
-        interval : Interval for aggregation of trade data.
         """
-        self.trade_processor = TradeProcessor(trade_file_path, interval)
         self.lob_processor = LimitOrderBookProcessor(lob_file_path)
+        self.trade_processor = TradeProcessor(trade_file_path, self.lob_processor)
 
         symbol = lob_file_path.split('_')[-1]
         symbol = symbol.split('.')[0]
@@ -68,7 +67,6 @@ def fix_missing(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
-
 def combine_dataset(trade_df, lob_df, save_path) -> None:
     """
     Combine trade and limit order book data into a single dataframe.
@@ -77,21 +75,29 @@ def combine_dataset(trade_df, lob_df, save_path) -> None:
     ----------
     trade_df : DataFrame of aggregated trades.
     lob_df : DataFrame of aggregated limit order books.
+    save_path : Path to save the combined data.
     """
-    # Check if trade_df has unique indices
+    # Merge the two dataframes on the 't' column
+    # Check if unique indices
     if not trade_df.index.is_unique:
-        print(save_path)
+        # Print the indices that are not unique
+        raise ValueError("Trade dataframe has non-unique indices")
 
     if not lob_df.index.is_unique:
-        # Get the indices that are not unique
-        indices = lob_df.index[lob_df.index.duplicated(keep=False)]
-        # print(f'Indices not unique: {indices}')
-        print(f'Indices not unique: {save_path}')
+        raise ValueError("LOB dataframe has non-unique indices")
 
-    # Merge the two dataframes on the 't' column
-    merged_df = pd.concat([trade_df, lob_df], axis=1)
+    lob_df.index = lob_df.index.strftime('%H:%M:%S:%f')
+    merged_df = pd.concat([lob_df, trade_df], axis=1)
+
+    indices = merged_df.index.tolist()[:-2]
+    indices = ['opening'] + indices + ['closing']
+    merged_df = merged_df.loc[indices]
 
     merged_df = fix_missing(merged_df)
+
+    # Check if there are still nans
+    if merged_df.iloc[1:-1].isna().any(axis=1).any():
+        raise ValueError("NaNs remain in the merged dataframe")
 
     # Save the combined dataframe to a parquet file
     merged_df.to_parquet(save_path, index=False)
