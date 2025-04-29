@@ -12,6 +12,6 @@ class TradeLinearRegression(BaseLinearRegression):
         ----------
         sequence_size : Number of time steps in the input data
         """
-        # Trade data has 5 features: Open, High, Low, Close, Volume
-        feature_size = 2
+        # Trade data has 5 features: Open, High, Low, Close, Volume, VWAP
+        feature_size = 6
         super().__init__(feature_size, sequence_size)
