@@ -1,5 +1,6 @@
 from typing import Hashable
 from DataProcessing.Processors import FileProcessor
+from DataProcessing.Processors import LimitOrderBookProcessor
 import pandas as pd
 import numpy as np
 import datetime
@@ -10,7 +11,7 @@ class TradeProcessor(FileProcessor):
     This class processes trade data files. It inherits from the FileProcessor class and implements the process_file method.
     The trade data is assumed to be a gzip compressed CSV file.
     """
-    def __init__(self, file_path: str, interval: str):
+    def __init__(self, file_path: str, lob_processor: LimitOrderBookProcessor):
         """
         Initialize the TradeProcessor with the path to the file to be processed and the interval for aggregation.
         The file is loaded and the 't' column is converted to datetime format.
@@ -18,17 +19,17 @@ class TradeProcessor(FileProcessor):
         Parameters
         ----------
         file_path : Path to the file to be processed.
-        interval : Interval for aggregation of trade data.
+        lob_processor : Processor of limit order book data.
         """
-        self.interval = interval
         self.aggregated_data = None
+        self.lob_processor = lob_processor
         super().__init__(file_path)
 
     def process_file(self):
         """
         Process the trade data file. This method is called during initialization.
         """
-        self.aggregated_data = process_all_days(self.df, self.interval)
+        self.aggregated_data = process_all_days(self.df, self.lob_processor)
 
 def has_auctions(df: pd.DataFrame) -> bool:
     """
@@ -156,24 +157,45 @@ def aggregate_interval(df: pd.DataFrame) -> pd.Series:
         'quantity': volume,
     })
 
-def aggregate_trades(df: pd.DataFrame, interval: str) -> pd.DataFrame:
+def aggregate_trades(df: pd.DataFrame, lob_processor: LimitOrderBookProcessor, date: datetime.date) -> pd.DataFrame:
     """
     This function aggregates all the trades of a given df using a resampling interval.
 
     Parameters
     ----------
     df : Dataframe to be aggregated. Assumed to have columns 'price' and 'quantity'.
-    interval : Aggregation interval using a format that is supported by Pandas resample function.
+    lob_processor : Processor of limit order book data.
+    date : Date of the trades to be processed.
 
     Returns
     -------
     Dataframe of resampled trade data
     """
-    resample = df.resample(interval, on='t', label='left')
 
-    return resample.apply(aggregate_interval)
+    # Get the time bins
+    time_bins = lob_processor.get_time_bins(date)
+    if time_bins is None:
+        return pd.DataFrame()
 
-def process_day(df: pd.DataFrame, interval: str, date: datetime.date) -> tuple[datetime.date, pd.DataFrame]:
+    trade_bins = pd.cut(df['t'], bins=time_bins)
+
+    # Group the trades by the time bins
+    groups = df.groupby(trade_bins, observed=True)
+    aggregated_trades = groups.apply(aggregate_interval, include_groups=False)
+
+    if aggregated_trades.empty:
+        return pd.DataFrame()
+
+    intervals = pd.IntervalIndex(aggregated_trades.index)
+    aggregated_trades.index = intervals.right
+
+    # Check if unique
+    if not aggregated_trades.index.is_unique:
+        raise ValueError("Timestanp indices have non-unique indices")
+
+    return aggregated_trades
+
+def process_day(df: pd.DataFrame, lob_processor: LimitOrderBookProcessor, date: datetime.date) -> tuple[datetime.date, pd.DataFrame]:
     """
     Process all the trades of a given day. All trades within this day are aggregated to a given interval.
     The opening and closing auctions are also included in the aggregated data, with the first row being the opening auction
@@ -182,7 +204,7 @@ def process_day(df: pd.DataFrame, interval: str, date: datetime.date) -> tuple[d
     Parameters
     ----------
     df : DataFrame containing the trade data.
-    interval : Interval to aggregate the trade data to.
+    lob_processor : Processor of limit order book data.
     date : Date of the trades to be processed.
 
     Returns
@@ -199,16 +221,15 @@ def process_day(df: pd.DataFrame, interval: str, date: datetime.date) -> tuple[d
 
     # Aggregation only uses normal trades
     df = df[df['flag'] == 'NORMAL']
-    aggregated_trades = aggregate_trades(df, interval)
+    aggregated_trades = aggregate_trades(df, lob_processor, date)
+    if aggregated_trades.empty:
+        return date, pd.DataFrame()
 
     # Removing the day from the index and converting the time to a string
-    aggregated_trades.index = aggregated_trades.index.strftime('%H:%M:%S')
-    indices = aggregated_trades.index.tolist()
-    indices = ['opening'] + indices + ['closing']
+    aggregated_trades.index = aggregated_trades.index.strftime('%H:%M:%S:%f')
 
     # Concatenate the aggregated trades with the auction data
     aggregated_trades = pd.concat([aggregated_trades, auction_data])
-    aggregated_trades = aggregated_trades.loc[indices]
 
     return date, aggregated_trades
 
@@ -222,7 +243,7 @@ def unpack_args(args) -> tuple[datetime.date, pd.DataFrame]:
     """
     return process_day(*args)
 
-def process_all_days(df: pd.DataFrame, interval: str) -> dict[Hashable | datetime.date, pd.DataFrame]:
+def process_all_days(df: pd.DataFrame, lob_processor: LimitOrderBookProcessor) -> dict[Hashable | datetime.date, pd.DataFrame]:
     """
     Process all the trades of a given dataframe. All trades within this day are aggregated to a given interval.
     The opening and closing auctions are also included in the aggregated data, with the first row being the opening auction
@@ -231,7 +252,7 @@ def process_all_days(df: pd.DataFrame, interval: str) -> dict[Hashable | datetim
     Parameters
     ----------
     df : DataFrame containing the trade data.
-    interval : Interval to aggregate the trade data to.
+    lob_processor : Processor of limit order book data.
 
     Returns
     -------
@@ -243,7 +264,7 @@ def process_all_days(df: pd.DataFrame, interval: str) -> dict[Hashable | datetim
     n_cores = multiprocessing.cpu_count()
 
     # Use multiprocessing to process each group in parallel
-    items = [(group, interval, date) for date, group in groups]
+    items = [(group, lob_processor, date) for date, group in groups]
     with multiprocessing.Pool(n_cores) as pool:
         processed_groups = pool.map(unpack_args, items)
 
