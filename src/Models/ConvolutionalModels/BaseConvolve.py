@@ -9,7 +9,7 @@ class BaseConvolve(BaseModel):
     """
 
     def __init__(self, feature_size: int, sequence_size: int, conv_channels: list[int], fc_neurons: list[int],
-                 kernel_size: int, stride: int=1, padding: int=0, dilation: int=1, dropout: float=0.5):
+                 kernel_size: list[int], stride: int=1, padding: int=0, dilation: int=1, dropout: float=0):
         """
         Initializes the Convolutional Neural Network for predicting the Closing Price of a stock.
 
@@ -31,7 +31,7 @@ class BaseConvolve(BaseModel):
         self.sequence_size = sequence_size
         self.conv_channels = conv_channels
         self.fc_neurons = fc_neurons
-        self.kernel_size = kernel_size
+        self.kernel_sizes = kernel_size
         self.stride = stride
         self.padding = padding
         self.dilation = dilation
@@ -41,10 +41,13 @@ class BaseConvolve(BaseModel):
         super().__init__(expected_dims)
 
     def build_model(self) -> None:
-
-        # Making sure that conv_channels and fc_neurons are lists
-        self.conv_channels = [self.conv_channels] if type(self.conv_channels) == int else self.conv_channels
-        self.fc_neurons = [self.fc_neurons] if type(self.fc_neurons) == int else self.fc_neurons
+        # Converting to lists
+        if isinstance(self.conv_channels, int):
+            self.conv_channels = [self.conv_channels]
+        if isinstance(self.kernel_sizes, int):
+            self.kernel_sizes = [self.kernel_sizes]
+        if isinstance(self.fc_neurons, int):
+            self.fc_neurons = [self.fc_neurons]
 
         # This layer permutes the dimensions of the input tensor by swapping 2nd and 3rd dimensions
         self.layers.append(PermuteLayer((0, 2, 1)))
@@ -52,13 +55,13 @@ class BaseConvolve(BaseModel):
         # Convolutional Layers
         in_channels = self.feature_size
         output_size = self.sequence_size
-        for out_channels in self.conv_channels:
+        for out_channels, kernel_size in zip(self.conv_channels, self.kernel_sizes):
             self.layers.append(
-                nn.Conv1d(in_channels, out_channels, self.kernel_size, self.stride, self.padding, self.dilation)
+                nn.Conv1d(in_channels, out_channels, kernel_size, self.stride, self.padding, self.dilation)
             )
 
             # Size reduction from convolution
-            output_size = (output_size + 2 * self.padding - self.kernel_size) // self.stride + 1
+            output_size = (output_size + 2 * self.padding - kernel_size) // self.stride + 1
 
             # ReLU Activation
             self.layers.append(
