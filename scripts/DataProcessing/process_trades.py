@@ -8,7 +8,7 @@ save_path = '/home/amish/Projects/CloseAuctionPredict/data/aggregated_files'
 files = os.listdir(path_to_trades)
 files.sort()
 
-start_at = 0
+start_at = 27 + 177
 files = files[start_at:]
 
 for file in tqdm(files):
@@ -20,7 +20,7 @@ for file in tqdm(files):
     trade_file = os.path.join(path_to_trades, file)
 
     try:
-        file_merger = FileMerger(trade_file, lob_file, '1min')
+        file_merger = FileMerger(trade_file, lob_file)
         file_merger.combine_datasets(save_path)
     except FileNotFoundError:
         print(f'File not found: {file}')
