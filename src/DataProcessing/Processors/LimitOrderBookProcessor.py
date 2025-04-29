@@ -1,9 +1,13 @@
 from typing import Hashable
+
+from pandas import IntervalIndex
+
 from DataProcessing.Processors import FileProcessor
 import pandas as pd
 import numpy as np
 import datetime
 import multiprocessing
+
 
 class LimitOrderBookProcessor(FileProcessor):
     """
@@ -28,6 +32,41 @@ class LimitOrderBookProcessor(FileProcessor):
         Process the trade data file. This method is called during initialization.
         """
         self.aggregated_data = process_all_days(self.df)
+
+    def get_time_bins(self, date: datetime.date) -> IntervalIndex | None:
+        """
+        Get the time bins for the given date. This is used to create the time index for the dataframe.
+
+        Parameters
+        ----------
+        date : Date of the data to be processed.
+
+        Returns
+        -------
+        DataFrame with the time bins.
+        """
+        if date not in self.aggregated_data:
+            return None
+
+        # Get the data for the given date
+        df = self.aggregated_data[date]
+
+        # Add one minute before the first timestamp
+        timestamps = pd.Series(df.index)
+        first_timestamp = timestamps.iloc[0] - pd.Timedelta(minutes=1)
+
+        # Prepend and rebuild as a pandas DatetimeIndex
+        timestamps = pd.concat([
+            pd.Series([first_timestamp]),
+            timestamps
+        ]).reset_index(drop=True)
+
+        # Now build IntervalIndex
+        intervals = pd.IntervalIndex.from_arrays(
+            timestamps[:-1], timestamps[1:], closed='left'
+        )
+
+        return intervals
 
 
 def empty_rows(df: pd.DataFrame):
@@ -102,7 +141,6 @@ def fix_missing(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
-
 def process_day(df: pd.DataFrame, date: datetime.date) -> tuple[datetime.date, pd.DataFrame]:
     """
     Process a single day's data and aggregate it.
@@ -131,14 +169,11 @@ def process_day(df: pd.DataFrame, date: datetime.date) -> tuple[datetime.date, p
         if df[bid_price].eq(0).any() or df[ask_price].eq(0).any():
             return date, pd.DataFrame()
 
-    # Set the time
-    df = set_time(df)
-
     # Set the time column as the index
     df = df.set_index('t')
 
-    # Removes the day from the index and converts it to a string
-    df.index = df.index.strftime('%H:%M:%S')
+    # # Removes the day from the index and converts it to a string
+    # df.index = df.index.strftime('%H:%M:%S')
 
     return date, df
 
@@ -151,32 +186,6 @@ def unpack_args(args) -> tuple[datetime.date, pd.DataFrame]:
     args : Tuple containing the arguments for the process_day function.
     """
     return process_day(*args)
-
-def set_time(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Round the time to the nearest minute
-
-    Parameters
-    ----------
-    df
-
-    Returns
-    -------
-
-    """
-    # Get first time and last
-    first_time = df['t'].iloc[0]
-
-    # Round down to the nearest minute
-    first_time = first_time.floor('min')
-
-    # Create range of times with increments of 1 minute
-    n_rows = df.shape[0]
-    indices = pd.date_range(start=first_time, periods=n_rows, freq='1min')
-    df['t'] = indices
-
-    return df
-
 
 def process_all_days(df: pd.DataFrame) -> dict[Hashable | datetime.date, pd.DataFrame]:
     """
@@ -195,7 +204,6 @@ def process_all_days(df: pd.DataFrame) -> dict[Hashable | datetime.date, pd.Data
 
     if df.empty:
         return {}
-
 
     # The nature column is not needed for the processing
     df = df.drop(columns=['nature'])
