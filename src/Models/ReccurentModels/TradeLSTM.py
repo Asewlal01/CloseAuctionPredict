@@ -18,6 +18,6 @@ class TradeLSTM(BaseLSTM):
         lstm_size : Number of LSTM layers
         fc_neurons : Number of nodes in the fully connected layers. Can be a list of integers or a single integer.
         """
-        # Trade data has 5 features: close, high, low, open, volume
-        feature_size = 2
+        # Trade data has 5 features: close, high, low, open, volume, vwap
+        feature_size = 6
         super(TradeLSTM, self).__init__(feature_size,  hidden_size, lstm_size, fc_neurons, dropout)
