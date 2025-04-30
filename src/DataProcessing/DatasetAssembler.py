@@ -6,7 +6,6 @@ import fastparquet
 import datetime
 from tqdm import tqdm
 
-date_type = list[int]
 processed_data_type = dict[str, np.ndarray]
 
 class DatasetAssembler:

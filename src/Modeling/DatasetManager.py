@@ -2,7 +2,8 @@ import torch
 import os
 from typing import Tuple
 import gc
-from DataProcessing.DatasetAssembler import generate_dates, date_type
+
+date_type = list[int]
 
 DatasetTuple = Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
 
@@ -257,3 +258,32 @@ def increment_month(year: int, month: int, increment_value: int) -> tuple[int, i
         month -= 12
 
     return year, month
+
+def generate_dates(start_date: date_type, end_date: date_type) -> list[date_type]:
+    """
+    Generate a list of dates between the start and end date. The dates are given as [year, month].
+
+    Parameters
+    ----------
+    start_date : Start date to process the trades from. Given as [year, month]
+    end_date : End date to process the trades to. Given as [year, month]
+
+    Returns
+    -------
+    List of dates between the start and end date
+    """
+    start_year, start_month = start_date
+    end_year, end_month = end_date
+
+    dates = []
+    year, month = start_year, start_month
+
+    # Checks if we are before the end year, or before the end month in the same year
+    while (year < end_year) or (year == end_year and month <= end_month):
+        dates.append([year, month])
+        month += 1
+        if month > 12:
+            month = 1
+            year += 1
+
+    return dates
