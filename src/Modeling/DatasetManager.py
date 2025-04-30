@@ -94,7 +94,7 @@ class DatasetManager:
         torch.cuda.empty_cache()
         gc.collect()
 
-    def get_training_data(self, binary_classification: bool=True) -> DatasetTuple:
+    def get_training_data(self, binary_classification: bool=True) -> list[DatasetTuple]:
         """
         Get the training and validation data. The y values of the training dataset are converted to a binary classification
 
