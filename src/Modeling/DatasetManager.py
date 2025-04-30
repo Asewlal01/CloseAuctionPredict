@@ -13,8 +13,7 @@ class DatasetManager:
 
         Parameters
         ----------
-        dataset_path : Path to the dataset directory. Assumed to contain subfolders which represent the data for each
-        month
+        dataset_path : Path to the dataset directory. Assumed to contain subfolders which represent the data for each month
         train_length : Length of training set in months. Default is 10 months.
         """
         self.dataset_path = dataset_path
@@ -112,15 +111,14 @@ class DatasetManager:
             raise ValueError('Training data not set up. Please call setup_dataset() first.')
 
         train = self.train
-        # Normalizing the datasets
+
+        # Training requires boolean classification
         if binary_classification:
-            X, y, z = train
-            y = convert_to_classification(y)
-            train = (X, y, z)
+            train = convert_to_classification(train)
 
         return train
 
-    def get_test_data(self) -> tuple[DatasetTuple, DatasetTuple]:
+    def get_test_data(self) -> DatasetTuple:
         """
         Get the data for the train, validation and test sets.
 
@@ -150,34 +148,45 @@ def generate_month_path(path: str, date: date_type) -> str:
     year, month = date
     return os.path.join(path, f'{year}-{month}')
 
-def load_data(month: str) -> DatasetTuple:
+def load_data(month_path: str) -> list[DatasetTuple]:
     """
-    Load the data for a specific month. It is assumed that the folder contains X, y and z files, which can all be
-    loaded into torch tensors as .pt files.  The X file is assumed to be the input variable, y is the output variable and z is the
-    additional time-independent features.
+    Load the data for a specific month. It is assumed that the folder of the month contains subfolders for each
+    day within that month. It is assumed that the subfolder contains X, y and z files, which can all be
+    loaded into torch tensors as .pt files. The X file is assumed to be the input variable, y is the output variable
+    and z is the additional time-independent features.
 
     Parameters
     ----------
-    month : Month for which to load the data. The month is assumed to be in the format 'YYYY-MM'.
+    month_path : Month for which to load the data. The month is assumed to be in the format 'YYYY-MM'.
 
     Returns
     -------
     Tuple of torch tensors as (X, y, z).
     """
-    # Path to each file
-    path_X = os.path.join(month, 'X.pt')
-    path_y = os.path.join(month, 'y.pt')
-    path_z = os.path.join(month, 'z.pt')
+    # Sorting to make sure the data is in the correct order
+    days = os.listdir(month_path)
+    days.sort()
 
-    X = torch.load(path_X, weights_only=False)
-    y = torch.load(path_y, weights_only=False)
-    z = torch.load(path_z, weights_only=False)
+    results = []
+    for day in days:
+        # Path to each file
+        path_X = os.path.join(month_path, day, 'X.pt')
+        path_y = os.path.join(month_path, day, 'y.pt')
+        path_z = os.path.join(month_path, day, 'z.pt')
 
-    return X, y, z
+        # Load the data
+        X = torch.load(path_X, weights_only=False)
+        y = torch.load(path_y, weights_only=False)
+        z = torch.load(path_z, weights_only=False)
+
+        results.append((X, y, z))
+
+    return results
 
 def split_month(month: str) -> list[int]:
     """
     Split the month into a year-month format. For example, '2021-01' becomes 2021 and 1.
+
     Parameters
     ----------
     month : Month to split.
@@ -189,11 +198,9 @@ def split_month(month: str) -> list[int]:
     year, month = month.split('-')
     return [int(year), int(month)]
 
-def combine_dataset(*datasets) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+def combine_dataset(*datasets: list[DatasetTuple]) -> list[DatasetTuple]:
     """
-    Combine the two datasets. It is assumed that the datasets are in format: X, y, z. The datasets are concatenated
-    along the first dimension.
-
+    Combine all the datasets for each month into a combined dataset. The datasets are assumed to be in the format
 
     Parameters
     ----------
@@ -201,38 +208,33 @@ def combine_dataset(*datasets) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor
 
     Returns
     -------
-    Combined dataset as a tensor.
+    Combined dataset as a list of tuples.
     """
-    first_dataset = datasets[0]
-    if len(datasets) == 1:
-        return first_dataset
+    results = []
+    for dataset in datasets:
+        results.extend(dataset)
 
-    # Initialize the variables
-    X, y, z = first_dataset
-    for i in range(1, len(datasets)):
-        X_i, y_i, z_i = datasets[i]
+    return results
 
-        # Concatenate the datasets
-        X = torch.cat([X, X_i], dim=0)
-        y = torch.cat([y, y_i], dim=0)
-        z = torch.cat([z, z_i], dim=0)
-
-    return X, y, z
-
-def convert_to_classification(y):
+def convert_to_classification(dataset) -> list[DatasetTuple]:
     """
     Convert the output of the dataset to a binary classification problem. The output is 1 if the value is greater than 0
     and 0 otherwise. This is used for binary classification problems.
     Parameters
     ----------
-    y : Output of the dataset to convert.
+    dataset : Dataset to convert. The dataset is assumed to be a list of tuples of the form (X, y, z).
 
     Returns
     -------
     Binary classification output.
     """
-    return torch.where(y > 0, 1, 0).float()
+    results = []
+    for batch in dataset:
+        X, y, z = batch
+        y = torch.where(y > 0, 1, 0).float()
+        results.append((X, y, z))
 
+    return results
 
 def increment_month(year: int, month: int, increment_value: int) -> tuple[int, int]:
     """
