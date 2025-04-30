@@ -7,6 +7,7 @@ import datetime
 from tqdm import tqdm
 
 date_type = list[int]
+processed_data_type = dict[str, np.ndarray]
 
 class DatasetAssembler:
     """
@@ -188,12 +189,13 @@ def process_month(files: list[list[str]], save_dir, sequence_length: int, n_core
     # Merge all the results into a single list
     merged_results = merge_lists(results)
 
-    # Combine all results to singular dictionary for each variable
-    combined_results = combine_results(merged_results)
+    # # Combine all results to singular dictionary for each variable
+    # combined_results = combine_results(merged_results)
 
-    save_results(combined_results, save_dir)
+    # save_results(combined_results, save_dir)
+    save_results(merged_results, save_dir)
 
-def process_stock_files(files: list[str], sequence_length: int) -> list[dict[str, np.ndarray]]:
+def process_stock_files(files: list[str], sequence_length: int) -> dict[str, processed_data_type]:
     """
     Process all trades of a given stock
 
@@ -213,7 +215,7 @@ def process_stock_files(files: list[str], sequence_length: int) -> list[dict[str
     # We need the previous day trades to compute the overnight return
     previous_date = get_date(first_file)
 
-    dataset = []
+    dataset = {}
 
     # Since we already have first file, we start from the second file
     for file in files[1:]:
@@ -226,7 +228,7 @@ def process_stock_files(files: list[str], sequence_length: int) -> list[dict[str
         date = get_date(file)
         if process_current_file(df, previous_date, date, sequence_length):
             result = process_file(df, previous_df, sequence_length)
-            dataset.append(result)
+            dataset[date.strftime('%Y-%m-%d')] = result
 
         # Update for next iteration
         previous_date = date
@@ -344,6 +346,28 @@ def combine_results(results: list[dict[str, np.ndarray]]) -> dict[str, pd.DataFr
 
     return combined_results
 
+# def save_results(results: dict[str, pd.DataFrame], save_dir: str) -> None:
+#     """
+#     Save each variable of results to a separate file.
+#
+#     Parameters
+#     ----------
+#     results : List of dictionaries with the processed data
+#     save_dir : Directory where the results will be saved
+#     """
+#
+#     # Create the directory if it doesn't exist
+#     os.makedirs(save_dir, exist_ok=True)
+#
+#     for key, value in results.items():
+#         # Check for nans before saving
+#         if value.isnull().values.any():
+#             raise ValueError(f"DataFrame {key} contains NaN values")
+#
+#         # Save the dataframe to a parquet file
+#         file_path = os.path.join(save_dir, f'{key}.parquet')
+#         value.to_parquet(file_path, index=False)
+
 def save_results(results: dict[str, pd.DataFrame], save_dir: str) -> None:
     """
     Save each variable of results to a separate file.
@@ -357,17 +381,23 @@ def save_results(results: dict[str, pd.DataFrame], save_dir: str) -> None:
     # Create the directory if it doesn't exist
     os.makedirs(save_dir, exist_ok=True)
 
-    for key, value in results.items():
-        # Check for nans before saving
-        if value.isnull().values.any():
-            raise ValueError(f"DataFrame {key} contains NaN values")
+    for date, data in results.items():
+        # Create a folder for the date
+        date_dir = os.path.join(save_dir, date)
+        os.makedirs(date_dir, exist_ok=True)
 
-        # Save the dataframe to a parquet file
-        file_path = os.path.join(save_dir, f'{key}.parquet')
-        value.to_parquet(file_path, index=False)
+        # Save each variable to a separate file
+        for feature, value in data.items():
+            # Check for nans before saving
+            if value.isnull().values.any():
+                raise ValueError(f"DataFrame {feature} contains NaN values")
+
+            # Save the dataframe to a parquet file
+            file_path = os.path.join(date_dir, f'{feature}.parquet')
+            value.to_parquet(file_path, index=False)
 
 
-def process_file(df: pd.DataFrame, previous_df: pd.DataFrame, sequence_length: int) -> dict[str, np.ndarray]:
+def process_file(df: pd.DataFrame, previous_df: pd.DataFrame, sequence_length: int) -> processed_data_type:
     """
     Process a file to get the data in the correct format.
 
@@ -616,7 +646,7 @@ def normalize_volume(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
-def merge_lists(results: list) -> list:
+def merge_lists(results: list[dict]) -> dict[str, dict[str, pd.DataFrame]]:
     """
     Merge all the lists into a single list. This is used to combine the results from all the stocks into a single
 
@@ -628,10 +658,27 @@ def merge_lists(results: list) -> list:
     -------
     List with all the elements from the input lists
     """
-    merged = []
+    merged = {}
+    # After processing, we get a list of dict for each stock
     for result in results:
-        if result is not None:
-            merged.extend(result)
+        # Each dict of a stock is a date -> data dictionary
+        for date, data in result.items():
+            if date not in merged:
+                merged[date] = {}
+
+            # Each dict of a date is a feature -> value dictionary
+            for feature, value in data.items():
+                if feature not in merged[date]:
+                    merged[date][feature] = []
+
+                # Append the data to the list
+                merged[date][feature].append(value)
+
+    # Convert the lists to numpy arrays
+    for date, data in merged.items():
+        for feature, value in data.items():
+            # Convert the list to a numpy array
+            merged[date][feature] = pd.DataFrame(value)
 
     return merged
 
