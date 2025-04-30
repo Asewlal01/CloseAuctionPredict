@@ -60,6 +60,7 @@ def objective(trial):
         kernel_size=kernel_sizes,
         dropout=dropout_rate
     )
+    model.to('cuda')
 
     # Setup tester
     tester = WalkForwardTester(model, dataset_manager)
