@@ -2,6 +2,7 @@ import torch
 import os
 import numpy as np
 import pandas as pd
+from tqdm import tqdm
 
 
 def load_data(month: str) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -57,15 +58,21 @@ def load_data(month: str) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         raise ValueError(f'NaN values found in z for month {month}')
     return X, y, z
 
-file_path = 'raw_merged_files/'
-data_path = 'merged_files/'
+load_path = 'raw_merged_files'
+save_path = 'merged_files'
 
-for folder in os.listdir(file_path):
-    save_path = os.path.join(data_path, folder)
-    load_path = os.path.join(file_path, folder)
-    os.makedirs(save_path, exist_ok=True)
+for month in tqdm(os.listdir(load_path)):
+    month_load_path = os.path.join(load_path, month)
 
-    X, y, z = load_data(load_path)
-    torch.save(X, f'{save_path}/X.pt')
-    torch.save(y, f'{save_path}/y.pt')
-    torch.save(z, f'{save_path}/z.pt')
+    month_save_path = os.path.join(save_path, month)
+    os.makedirs(month_save_path, exist_ok=True)
+
+    for day in os.listdir(month_load_path):
+        day_load_path = os.path.join(month_load_path, day)
+        X, y, z = load_data(day_load_path)
+
+        day_save_path = os.path.join(month_save_path, day)
+        os.makedirs(day_save_path, exist_ok=True)
+        torch.save(X, os.path.join(day_save_path, 'X.pt'))
+        torch.save(y, os.path.join(day_save_path, 'y.pt'))
+        torch.save(z, os.path.join(day_save_path, 'z.pt'))
