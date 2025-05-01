@@ -1,7 +1,6 @@
-from Modeling.DatasetManager import DatasetManager
 from Models.ConvolutionalModels.LimitOrderBookConvolve import LimitOrderBookConvolve
-from Modeling.WalkForwardTester import WalkForwardTester
-import optuna
+from Modeling.HyperOptimizer import HyperOptimizer
+from Modeling.DatasetManager import DatasetManager
 import os
 
 path_to_data = 'data/merged_files'
@@ -48,10 +47,6 @@ def objective(trial):
     epochs_multiple = trial.suggest_int('epochs_multiple', 1, 10)
     epochs = epochs_multiple * 5
 
-    # Setup Dataset manager
-    dataset_manager = DatasetManager(path_to_data, train_length=9)
-    dataset_manager.setup_dataset('2021-01')
-
     # Setup model
     model = LimitOrderBookConvolve(
         sequence_size=sequence_size,
@@ -60,32 +55,12 @@ def objective(trial):
         kernel_size=kernel_sizes,
         dropout=dropout_rate
     )
-    model.to('cuda')
 
-    # Setup tester
-    tester = WalkForwardTester(model, dataset_manager)
-
-    average_loss = 0
-    for i in range(3):
-        tester.train(epochs, lr, verbose=False)
-        evaluation = tester.evaluate_on_test()
-
-        # We only need the loss
-        loss = evaluation[2]
-        average_loss += loss * 1/3
-
-    return average_loss
+    return model, epochs, lr
 
 if __name__ == '__main__':
-    # Create a study object
-    study = optuna.create_study(direction='minimize', study_name='cnn')
-
-    # Optimize the objective function
-    study.optimize(objective, n_trials=100)
-
-    # Save the results
-    df = study.trials_dataframe()
-    df.to_csv(f'results/optuna/cnn/hyperparameters.csv', index=False)
-
+    dataset = DatasetManager(path_to_data)
+    optimizer = HyperOptimizer(dataset, '2021-1')
+    optimizer.optimize(objective, results, n_trials=100)
 
 
