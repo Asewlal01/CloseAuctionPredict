@@ -3,12 +3,6 @@ from Modeling.HyperOptimizer import HyperOptimizer
 from Modeling.DatasetManager import DatasetManager
 import os
 
-path_to_data = 'data/merged_files'
-
-# Save path of results
-results = 'results/hyperparameters'
-os.makedirs(results, exist_ok=True)
-
 def objective(trial):
     sequence_size = 420
 
@@ -59,6 +53,13 @@ def objective(trial):
     return model, epochs, lr
 
 if __name__ == '__main__':
+    path_to_data = 'data/merged_files'
+
+    # Save path of results
+    results = 'results/hyperparameters'
+    os.makedirs(results, exist_ok=True)
+
+    # Train the model
     dataset = DatasetManager(path_to_data)
     optimizer = HyperOptimizer(dataset, '2021-1')
     save_path = os.path.join(results, 'cnn')
