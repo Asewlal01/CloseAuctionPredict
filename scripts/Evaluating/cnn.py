@@ -3,7 +3,6 @@ from Modeling.DatasetManager import DatasetManager
 from Modeling.WalkForwardTester import WalkForwardTester
 import os
 import pandas as pd
-from tqdm import tqdm
 
 def main(model, name):
     path_to_data = 'data/merged_files'
@@ -12,7 +11,7 @@ def main(model, name):
 
     # Setup dataset manager
     dataset = DatasetManager(path_to_data, 12)
-    dataset.setup_dataset('2021-12')
+    dataset.setup_dataset('2021-1')
 
     # Setup tester
     tester = WalkForwardTester(model, dataset)
@@ -26,13 +25,14 @@ def main(model, name):
     test_results = []
     test_months = []
 
-    for _ in tqdm(range(12)):
+    while True:
         tester.train(epochs, lr, verbose)
         train_evaluation = tester.evaluate_on_train()
         test_evaluation = tester.evaluate_on_test()
 
         # Save results
         test_month = dataset.test_month
+        print(f"Completed evaluation for month: {test_month}")
         train_results.append(train_evaluation)
         test_results.append(test_evaluation)
         test_months.append(test_month)
@@ -53,7 +53,7 @@ def main(model, name):
     test_df_path = os.path.join(results, 'test_results.csv')
     train_df.to_csv(train_df_path, index=True, index_label='Month')
     test_df.to_csv(test_df_path, index=True, index_label='Month')
-    print("Evaluation completed for CNN.")
+    print(f"Evaluation completed for {name}.")
 
 if __name__ == '__main__':
     model = LimitOrderBookConvolve(

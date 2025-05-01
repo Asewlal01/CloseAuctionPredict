@@ -1,5 +1,5 @@
 from Models.ReccurentModels.LimitOrderBookLSTM import LimitOrderBookLSTM
-from scripts.Evaluating.cnn import main
+from cnn import main
 
 if __name__ == '__main__':
     model = LimitOrderBookLSTM(
