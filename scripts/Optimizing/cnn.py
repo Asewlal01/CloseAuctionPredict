@@ -6,7 +6,7 @@ import os
 path_to_data = 'data/merged_files'
 
 # Save path of results
-results = 'results/optuna/cnn'
+results = 'results/hyperparameters'
 os.makedirs(results, exist_ok=True)
 
 def objective(trial):
@@ -61,6 +61,7 @@ def objective(trial):
 if __name__ == '__main__':
     dataset = DatasetManager(path_to_data)
     optimizer = HyperOptimizer(dataset, '2021-1')
+    save_path = os.path.join(results, 'cnn')
     optimizer.optimize(objective, results, n_trials=100)
 
 
