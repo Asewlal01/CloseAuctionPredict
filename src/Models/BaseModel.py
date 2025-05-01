@@ -49,7 +49,7 @@ class BaseModel(nn.Module):
             x = layer(x)
 
         # Combining x and z into a single tensor
-        x = torch.cat((x, z), dim=1)
+        # x = torch.cat((x, z), dim=1)
         for layer in self.fc_layers:
             x = layer(x)
 
@@ -88,7 +88,8 @@ class BaseModel(nn.Module):
             raise AttributeError("The attribute `output_dim` is not defined in the model.")
 
         # Add two to the input dimension because we are concatenating the input tensor with z
-        self.output_dim = self.output_dim + 2
+        # self.output_dim = self.output_dim + 2
+        self.output_dim = self.output_dim
         if self.fc_neurons is None:
             return
 
@@ -107,8 +108,6 @@ class BaseModel(nn.Module):
         self.layers = nn.ModuleList(self.layers)
         self.fc_layers = nn.ModuleList(self.fc_layers)
 
-
-
     def to(self, *args, **kwargs):
         """
         Moves and/or casts the parameters and buffers.
@@ -116,3 +115,11 @@ class BaseModel(nn.Module):
         super().to(*args, **kwargs)
         self.device = next(self.parameters()).device
         return self
+
+    def reset_parameters(self):
+        """
+        Reset the parameters of the model.
+        """
+        for layer in self.layers:
+            if hasattr(layer, 'reset_parameters'):
+                layer.reset_parameters()
