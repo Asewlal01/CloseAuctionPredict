@@ -12,5 +12,5 @@ if __name__ == '__main__':
         fc_neurons=[32, 16],
     )
     model.to('cuda')
-    model_name = 'LSTM'
+    model_name = 'transformer'
     main(model, model_name)
