@@ -2,8 +2,8 @@ from Models.ConvolutionalModels.BaseConvolve import BaseConvolve
 
 class TradeConvolve(BaseConvolve):
     """
-    Convolutional Neural Network for predicting the Closing Price of a stock using the Trade data. This model assumes
-    that the trade data has prices and volumes, which are given in their own channels.
+    Convolutional Neural Network for predicting Stock Price using Trade data. This model assumes
+    that the trade data has OHLCV (Open, High, Low, Close, Volume) and VWAP (Volume Weighted Average Price) features.
     """
     def __init__(self, sequence_size: int, conv_channels: list[int], fc_neurons: list[int],
                  kernel_size: list[int], stride: int=1, padding: int=0, dilation: int=1, dropout: float=0):
@@ -23,7 +23,6 @@ class TradeConvolve(BaseConvolve):
         dropout : Dropout rate to use in the fully connected
         """
 
-        # Trade data has 5 channels: Open, High, Low, Close, VWAP and Volume
         feature_size = 6
         super().__init__(feature_size, sequence_size, conv_channels, fc_neurons,
                                             kernel_size, stride, padding, dilation, dropout)

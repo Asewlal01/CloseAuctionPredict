@@ -1,9 +1,10 @@
 from Models.ConvolutionalModels.BaseConvolve import BaseConvolve
 
-class LimitOrderBookConvolve(BaseConvolve):
+class TradeLobConvolve(BaseConvolve):
     """
-    Convolutional Neural Network for predicting the Closing Price of a stock using the Limit Order Book data, and
-    Trade data.
+    Convolutional Neural Network for predicting the Stock prices using Trade and Limit Order Book data. This model
+    can be seen as a combination of the LOBConvolve and TradeConvolve models. It uses the same features as the two
+    models, leading to a total of 26 features.
     """
     def __init__(self, sequence_size: int, conv_channels: list[int], fc_neurons: list[int],
                  kernel_size: list[int], stride: int=1, padding: int=0, dilation: int=1, dropout: float=0):

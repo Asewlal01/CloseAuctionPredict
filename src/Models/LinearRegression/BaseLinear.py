@@ -1,7 +1,7 @@
 from Models.BaseModel import BaseModel
-from Layers.ViewLayer import ViewLayer
+from Layers.ReshapeLayer import ReshapeLayer
 
-class BaseLinearRegression(BaseModel):
+class BaseLinear(BaseModel):
     """
     Base class for all the Logistic Regression Models. It inherits from the BaseModel class.
     """
@@ -26,7 +26,7 @@ class BaseLinearRegression(BaseModel):
         Build the model by adding all layers to self.layers.
         """
 
-        self.layers.append(ViewLayer())
+        self.layers.append(ReshapeLayer())
 
         # Each time step has feature_size features, hence total features is feature_size * sequence_size
         feature_size = self.feature_size * self.sequence_size
