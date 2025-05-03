@@ -1,7 +1,7 @@
 from Models.ConvolutionalModels.BaseConvolve import BaseConvolve
 from Models.ReccurentModels.BaseLSTM import BaseLSTM
 from Models.TransformerModels.BaseTransformer import BaseTransformer
-from Models.LinearRegression.BaseLinearRegression import BaseLinearRegression
+from Models.LinearRegression.BaseLinear import BaseLinear
 import torch
 
 # Global Variables
@@ -24,21 +24,21 @@ X_singular_features = X_input[0, :, :]
 z_input = torch.rand(samples, 2)
 z_singular = z_input[:1]
 
-def test_base_logistic_regression():
+def test_base_linear():
     # Testing with one feature
-    model = BaseLinearRegression(1, sequence_size)
+    model = BaseLinear(1, sequence_size)
     assert model(X_singular, z_singular).shape == (1, 1)
     assert model(X_singular_samples, z_input).shape == (samples, 1)
 
     # Testing with multiple features
-    model = BaseLinearRegression(features, sequence_size)
+    model = BaseLinear(features, sequence_size)
     assert model(X_singular_features, z_singular).shape == (1, 1)
     assert model(X_input, z_input).shape == (samples, 1)
 
 def test_base_convolve():
     # Convolutional Model settings
     conv_channels = [10, 10]
-    kernel_size = 2
+    kernel_size = [3, 2]
 
     # Testing with one feature
     model = BaseConvolve(1, sequence_size, conv_channels, fc_neurons, kernel_size)
