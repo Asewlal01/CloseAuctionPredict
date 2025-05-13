@@ -1,9 +1,9 @@
-from DataProcessing.Processors import FileProcessor
+from DataProcessing.Processors import BaseProcessor
 import pandas as pd
 import datetime
 import multiprocessing
 
-class AuctionProcessor(FileProcessor):
+class AuctionProcessor(BaseProcessor):
     """
     This class handles the trade files to obtain the auction data.
     """
@@ -15,7 +15,7 @@ class AuctionProcessor(FileProcessor):
         self.aggregated_data = process_all_days(self.df)
 
 
-def process_all_days(df: pd.DataFrame) -> pd.DataFrame:
+def process_all_days(df: pd.DataFrame) -> dict[datetime.date, pd.DataFrame]:
     """
     Process all days in the dataframe to get the auction data.
 
@@ -27,6 +27,9 @@ def process_all_days(df: pd.DataFrame) -> pd.DataFrame:
     -------
     DataFrame containing the aggregated trade data.
     """
+    if df.empty:
+        return {}
+
     # Group the dataframe by date
     grouped_by_date = df.groupby(df['t'].dt.date)
 
@@ -34,19 +37,13 @@ def process_all_days(df: pd.DataFrame) -> pd.DataFrame:
     with multiprocessing.Pool() as pool:
         results = pool.starmap(process_day, items)
 
-    if not results:
-        return pd.DataFrame()
+    # Filter out empty results
+    results = {date: data for date, data in results if not data.empty}
 
-    # Concatenate the results into a single dataframe
-    df = pd.concat(results)
-
-    # Sort the dataframe by date
-    df = df.sort_index()
-
-    return df
+    return results
 
 
-def process_day(df: pd.DataFrame, date: datetime.date) -> pd.DataFrame:
+def process_day(df: pd.DataFrame, date: datetime.date) -> tuple[datetime.date, pd.DataFrame]:
     """
     Process a single day of data to get the auction data.
 
@@ -67,12 +64,12 @@ def process_day(df: pd.DataFrame, date: datetime.date) -> pd.DataFrame:
 
     # Check if the dataframe has auction data
     if not has_auctions(df, indices):
-        return pd.DataFrame()
+        return date, pd.DataFrame()
 
     # Get the auction data
-    auction_data = get_auction_data(df, indices, date)
+    auction_data = get_auction_data(df, indices)
 
-    return auction_data
+    return date, auction_data
 
 def filter_flags(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -137,7 +134,7 @@ def has_auctions(df: pd.DataFrame, indices: tuple[int, int]) -> bool:
 
     return True
 
-def get_auction_data(df: pd.DataFrame, indices: tuple[int, int], date: datetime.date) -> pd.DataFrame:
+def get_auction_data(df: pd.DataFrame, indices: tuple[int, int]) -> pd.DataFrame:
     """
     Get the auction data from the trade data.
 
@@ -162,7 +159,7 @@ def get_auction_data(df: pd.DataFrame, indices: tuple[int, int], date: datetime.
 
     # Checking if there are any rows that are not an auction
     opening_all_auction = (opening_auction['flag'] == 'AUCTION').all()
-    closing_all_auction = (closing_auction['flag'] == 'AUCTION').all()
+    closing_all_auction = (closing_auction['flag'] == 'AUCTION') .all()
     if not opening_all_auction or not closing_all_auction:
         return pd.DataFrame()
 
@@ -170,18 +167,11 @@ def get_auction_data(df: pd.DataFrame, indices: tuple[int, int], date: datetime.
     opening_price, opening_quantity = merge_auction_data(opening_auction)
     closing_price, closing_quantity = merge_auction_data(closing_auction)
 
-    # Create a new dataframe with the auction data
-    auction_data = pd.DataFrame({
-        'opening_price': [opening_price],
-        'opening_quantity': [opening_quantity],
-        'closing_price': [closing_price],
-        'closing_quantity': [closing_quantity],
-    })
+    df = pd.DataFrame(columns=['Price', 'Quantity'])
+    df.loc['open'] = [opening_price, opening_quantity]
+    df.loc['close'] = [closing_price, closing_quantity]
 
-    # Set the date as the index
-    auction_data.index = [date]
-
-    return auction_data
+    return df
 
 def merge_auction_data(auction_rows: pd.DataFrame) -> tuple[float, int]:
     """
