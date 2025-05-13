@@ -1,17 +1,17 @@
-from typing import Hashable
-from DataProcessing.Processors import FileProcessor
+from DataProcessing.Processors import BaseProcessor
 from DataProcessing.Processors import LimitOrderBookProcessor
 import pandas as pd
 import numpy as np
 import datetime
+import os
 import multiprocessing
 
-class TradeProcessor(FileProcessor):
+class TradeProcessor(BaseProcessor):
     """
     This class processes trade data files. It inherits from the FileProcessor class and implements the process_file method.
     The trade data is assumed to be a gzip compressed CSV file.
     """
-    def __init__(self, file_path: str, lob_processor: LimitOrderBookProcessor):
+    def __init__(self, file_path: str, lob_data: str):
         """
         Initialize the TradeProcessor with the path to the file to be processed and the interval for aggregation.
         The file is loaded and the 't' column is converted to datetime format.
@@ -19,109 +19,165 @@ class TradeProcessor(FileProcessor):
         Parameters
         ----------
         file_path : Path to the file to be processed.
-        lob_processor : Processor of limit order book data.
+        lob_data : Path to the processed lob data.
         """
         self.aggregated_data = None
-        self.lob_processor = lob_processor
+        self.lob_data = lob_data
         super().__init__(file_path)
 
     def process_file(self):
         """
         Process the trade data file. This method is called during initialization.
         """
-        self.aggregated_data = process_all_days(self.df, self.lob_processor)
+        self.aggregated_data = process_all_days(self.df, self.lob_data)
 
-def has_auctions(df: pd.DataFrame) -> bool:
+    def save_results(self, save_path):
+        # Check if the aggregated data is empty
+        if self.aggregated_data is None:
+            print("Aggregated data is empty. Cannot save results.")
+            return
+
+        os.makedirs(save_path, exist_ok=True)
+        for date, df in self.aggregated_data.items():
+            # Create the file name
+            file_name = f"{date}.parquet"
+            file_path = os.path.join(save_path, file_name)
+
+            # Save the dataframe to a parquet file
+            df.to_parquet(file_path)
+
+
+def process_all_days(df: pd.DataFrame, lob_data: str) -> dict[datetime.date, pd.DataFrame]:
     """
-    Check if the dataframe has auction data.
-
-    Parameters
-    ----------
-    df : DataFrame to check.
-
-    Returns
-    -------
-    bool : True if the dataframe has auction data, False otherwise.
-    """
-    auctions = df[df['flag'] == 'AUCTION']
-    if auctions.empty:
-        return False
-
-    # Even if not empty, we may only have one auction
-    if len(auctions) < 2:
-        return False
-
-    # Check if the auctions are consecutive
-    max_idx_diff = auctions.index.diff().max()
-    if max_idx_diff == 1:
-        return False
-
-    return True
-
-def has_data(df: pd.DataFrame) -> bool:
-    """
-    Check if the dataframe has auction and trade data.
-
-    Parameters
-    ----------
-    df : DataFrame to check.
-
-    Returns
-    -------
-    bool : True if the dataframe has data, False otherwise.
-    """
-    trades = df[df['flag'] == 'NORMAL']
-    if trades.empty or not has_auctions(df):
-        return False
-
-    return True
-
-def merge_auction_data(auction_rows: pd.DataFrame) -> pd.DataFrame:
-    """
-    Merge all auction rows into a single dataframe with one row
-
-    Parameters
-    ----------
-    auction_rows : DataFrame containing the auction data.
-
-    Returns
-    -------
-    Series containing the merged auction data.
-    """
-    price = auction_rows['price'].iloc[0]
-    return pd.DataFrame({
-        'open': [price],
-        'close': [price],
-        'high': [price],
-        'low': [price],
-        'vwap': [price],
-        'quantity': [auction_rows['quantity'].sum()],
-    })
-
-def get_auction_data(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Get the auction data from the trade data.
+    Process all the trades of a given dataframe. All trades within this day are aggregated to a given interval.
+    The opening and closing auctions are also included in the aggregated data, with the first row being the opening auction
+    and the last row being the closing auction.
 
     Parameters
     ----------
     df : DataFrame containing the trade data.
+    lob_data : Path to the processed lob data.
+
+    Returns
+    -------
+    Dictionary with dates as keys and DataFrames as values. Each DataFrame contains the aggregated trade data for that date.
+    """
+
+    # Process the dataframe
+    items = groups_to_process(df, lob_data)
+    with multiprocessing.Pool() as pool:
+        processed_groups = pool.starmap(process_day, items)
+
+    # Concatenate the results into a dictionary
+    processed_groups = {date: data for date, data in processed_groups if not data.empty}
+
+    return processed_groups
+
+def groups_to_process(df: pd.DataFrame, lob_data: str) -> list[tuple[pd.DataFrame, datetime.date, pd.Index]]:
+    """
+    This function returns a list of tuples containing the dataframes to be processed and their corresponding dates.
+
+    Parameters
+    ----------
+    df
+    lob_data
+
+    Returns
+    -------
+
+    """
+
+    groups = df.groupby(df['t'].dt.date)
+    lob_dates = [date.split('.')[0] for date in os.listdir(lob_data) if date.endswith('.parquet')]
+
+    items = []
+    for date, group in groups:
+        str_date = str(date)
+
+        # Cannot be processed
+        if str_date not in lob_dates:
+            continue
+
+        # Load the lob dataframe
+        lob_file = os.path.join(lob_data, f'{str_date}.parquet')
+        lob_df = pd.read_parquet(lob_file)
+
+        # We only need the indices of the lob data
+        lob_indices = lob_df.index
+
+        items.append((group, date, lob_indices))
+
+    return items
+
+def process_day(df: pd.DataFrame, date: datetime.date, lob_indices: pd.Index) -> tuple[datetime.date, pd.DataFrame]:
+    """
+    Process all the trades of a given day. All trades within this day are aggregated to a given interval.
+    The opening and closing auctions are also included in the aggregated data, with the first row being the opening auction
+    and the last row being the closing auction.
+
+    Parameters
+    ----------
+    df : DataFrame containing the trade data.
+    date : Date of the trades to be processed.
+    lob_indices : Indices of the limit order book data.
+
     Returns
     -------
     DataFrame containing the aggregated trade data.
     """
-    auction_df = df[df['flag'] == 'AUCTION']
 
-    # Same auctions have a difference of 1 in their indices
-    idx = auction_df.index.diff().argmax()
-    opening_auction = auction_df.iloc[:idx]
-    closing_auction = auction_df.iloc[idx:]
+    # We only need NORMAL trades for processing
+    df = df[df['flag'] == 'NORMAL']
+    if df.empty:
+        return date, pd.DataFrame()
 
-    opening_merged = merge_auction_data(opening_auction)
-    closing_merged = merge_auction_data(closing_auction)
+    # We need to add the first time stamp to the indices if it is before the first lob index
+    first_timestamp = df['t'].iloc[0]
+    if first_timestamp < lob_indices[0]:
+        first_timestamp -= pd.Timedelta(seconds=1) # To avoid the first timestamp being equal to the first lob index
+        lob_indices = pd.Index([first_timestamp] + lob_indices.tolist())
 
-    # Reset index removes the normal index and replaces it with opening and closing
-    return pd.concat([opening_merged, closing_merged],
-                     keys=['opening', 'closing']).reset_index(level=1, drop=True)
+    # Bin the dataframe to the lob indices
+    binned = pd.cut(df['t'], bins=lob_indices)
+
+    aggregated_trades = aggregate_trades(df, binned)
+    if aggregated_trades.empty:
+        return date, pd.DataFrame()
+
+    # Fix missing values
+    aggregated_trades = fix_missing(aggregated_trades)
+
+    return date, aggregated_trades
+
+def aggregate_trades(df: pd.DataFrame, binned: pd.DataFrame) -> pd.DataFrame:
+    """
+    This function aggregates all the trades of a given df using a resampling interval.
+
+    Parameters
+    ----------
+    df : Dataframe to be aggregated. Assumed to have columns 'price' and 'quantity'.
+    binned : Binned dataframe to be used for aggregation. Assumed to have a column 't' with the time of the trades.
+
+    Returns
+    -------
+    Dataframe of resampled trade data
+    """
+
+    # Group the trades by the time bins
+    groups = df.groupby(binned, observed=False)
+    aggregated_trades = groups.apply(aggregate_interval)
+
+    if aggregated_trades.empty:
+        return pd.DataFrame()
+
+    # We want a timestamp as the index instead of intervals
+    aggregated_trades.index = [interval.right for interval in aggregated_trades.index]
+
+    # Check if unique
+    if not aggregated_trades.index.is_unique:
+        raise ValueError("Timestamp indices have non-unique indices")
+
+    return aggregated_trades
 
 def aggregate_interval(df: pd.DataFrame) -> pd.Series:
     """
@@ -157,118 +213,29 @@ def aggregate_interval(df: pd.DataFrame) -> pd.Series:
         'quantity': volume,
     })
 
-def aggregate_trades(df: pd.DataFrame, lob_processor: LimitOrderBookProcessor, date: datetime.date) -> pd.DataFrame:
+def fix_missing(df: pd.DataFrame) -> pd.DataFrame:
     """
-    This function aggregates all the trades of a given df using a resampling interval.
+    This function fixes the missing values in the dataframe. It fills the missing values with the last known value.
+    The first row is filled with the first value of the dataframe.
 
     Parameters
     ----------
-    df : Dataframe to be aggregated. Assumed to have columns 'price' and 'quantity'.
-    lob_processor : Processor of limit order book data.
-    date : Date of the trades to be processed.
+    df : Dataframe to be fixed. Assumed to have columns 'price' and 'quantity'.
 
     Returns
     -------
-    Dataframe of resampled trade data
+    Dataframe with missing values filled.
     """
+    # Forward fill the VWAP values
+    df['vwap'] = df['vwap'].ffill()
 
-    # Get the time bins
-    time_bins = lob_processor.get_time_bins(date)
-    if time_bins is None:
-        return pd.DataFrame()
+    # Open, high, low and close are filled to vwap values
+    df['open'] = df['open'].fillna(df['vwap'])
+    df['high'] = df['high'].fillna(df['vwap'])
+    df['low'] = df['low'].fillna(df['vwap'])
+    df['close'] = df['close'].fillna(df['vwap'])
 
-    trade_bins = pd.cut(df['t'], bins=time_bins)
+    # Quantity is zero since it is not a price
+    df['quantity'] = df['quantity'].fillna(0)
 
-    # Group the trades by the time bins
-    groups = df.groupby(trade_bins, observed=True)
-    aggregated_trades = groups.apply(aggregate_interval, include_groups=False)
-
-    if aggregated_trades.empty:
-        return pd.DataFrame()
-
-    intervals = pd.IntervalIndex(aggregated_trades.index)
-    aggregated_trades.index = intervals.right
-
-    # Check if unique
-    if not aggregated_trades.index.is_unique:
-        raise ValueError("Timestanp indices have non-unique indices")
-
-    return aggregated_trades
-
-def process_day(df: pd.DataFrame, lob_processor: LimitOrderBookProcessor, date: datetime.date) -> tuple[datetime.date, pd.DataFrame]:
-    """
-    Process all the trades of a given day. All trades within this day are aggregated to a given interval.
-    The opening and closing auctions are also included in the aggregated data, with the first row being the opening auction
-    and the last row being the closing auction.
-
-    Parameters
-    ----------
-    df : DataFrame containing the trade data.
-    lob_processor : Processor of limit order book data.
-    date : Date of the trades to be processed.
-
-    Returns
-    -------
-    DataFrame containing the aggregated trade data.
-    """
-    if not has_data(df):
-        return date, pd.DataFrame()
-
-    # Get auction data
-    auction_data = get_auction_data(df)
-    if auction_data.empty:
-        return date, pd.DataFrame()
-
-    # Aggregation only uses normal trades
-    df = df[df['flag'] == 'NORMAL']
-    aggregated_trades = aggregate_trades(df, lob_processor, date)
-    if aggregated_trades.empty:
-        return date, pd.DataFrame()
-
-    # Removing the day from the index and converting the time to a string
-    aggregated_trades.index = aggregated_trades.index.strftime('%H:%M:%S:%f')
-
-    # Concatenate the aggregated trades with the auction data
-    aggregated_trades = pd.concat([aggregated_trades, auction_data])
-
-    return date, aggregated_trades
-
-def unpack_args(args) -> tuple[datetime.date, pd.DataFrame]:
-    """
-    Unpack the arguments for the process_day function. This is used for multiprocessing.
-
-    Parameters
-    ----------
-    args : Tuple containing the arguments for the process_day function.
-    """
-    return process_day(*args)
-
-def process_all_days(df: pd.DataFrame, lob_processor: LimitOrderBookProcessor) -> dict[Hashable | datetime.date, pd.DataFrame]:
-    """
-    Process all the trades of a given dataframe. All trades within this day are aggregated to a given interval.
-    The opening and closing auctions are also included in the aggregated data, with the first row being the opening auction
-    and the last row being the closing auction.
-
-    Parameters
-    ----------
-    df : DataFrame containing the trade data.
-    lob_processor : Processor of limit order book data.
-
-    Returns
-    -------
-    Dictionary with dates as keys and DataFrames as values. Each DataFrame contains the aggregated trade data for that date.
-    """
-    # Group into days
-    groups = df.groupby(df['t'].dt.date)
-
-    n_cores = multiprocessing.cpu_count()
-
-    # Use multiprocessing to process each group in parallel
-    items = [(group, lob_processor, date) for date, group in groups]
-    with multiprocessing.Pool(n_cores) as pool:
-        processed_groups = pool.map(unpack_args, items)
-
-    # Concatenate the results into a dictionary
-    processed_groups = {date: data for date, data in processed_groups if not data.empty}
-
-    return processed_groups
+    return df
