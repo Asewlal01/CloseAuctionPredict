@@ -1,3 +1,3 @@
-from DataProcessing.Processors.FileProcessor import FileProcessor
+from DataProcessing.Processors.BaseProcessor import BaseProcessor
 from DataProcessing.Processors.TradeProcessor import TradeProcessor
 from DataProcessing.Processors.LimitOrderBookProcessor import LimitOrderBookProcessor
