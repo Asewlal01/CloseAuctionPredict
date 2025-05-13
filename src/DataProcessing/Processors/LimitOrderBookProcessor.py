@@ -1,15 +1,12 @@
-from typing import Hashable
-
-from pandas import IntervalIndex
-
-from DataProcessing.Processors import FileProcessor
+from DataProcessing.Processors import BaseProcessor
 import pandas as pd
 import numpy as np
 import datetime
 import multiprocessing
+from typing import Hashable
 
 
-class LimitOrderBookProcessor(FileProcessor):
+class LimitOrderBookProcessor(BaseProcessor):
     """
     This class processes limit order book data files. It inherits from the FileProcessor class and implements the
     process_file method.
@@ -17,14 +14,12 @@ class LimitOrderBookProcessor(FileProcessor):
     def __init__(self, file_path: str):
         """
         Initialize the LimitOrderBookProcessor with the path to the file to be processed.
-        The file is loaded and the 't' column is converted to datetime format.
 
         Parameters
         ----------
         file_path : Path to the file to be processed.
         """
 
-        self.aggregated_data = None
         super().__init__(file_path)
 
     def process_file(self):
@@ -33,46 +28,76 @@ class LimitOrderBookProcessor(FileProcessor):
         """
         self.aggregated_data = process_all_days(self.df)
 
-    def get_time_bins(self, date: datetime.date) -> IntervalIndex | None:
-        """
-        Get the time bins for the given date. This is used to create the time index for the dataframe.
-
-        Parameters
-        ----------
-        date : Date of the data to be processed.
-
-        Returns
-        -------
-        DataFrame with the time bins.
-        """
-        if date not in self.aggregated_data:
-            return None
-
-        # Get the data for the given date
-        df = self.aggregated_data[date]
-
-        # Add one minute before the first timestamp
-        timestamps = pd.Series(df.index)
-        first_timestamp = timestamps.iloc[0] - pd.Timedelta(minutes=1)
-
-        # Prepend and rebuild as a pandas DatetimeIndex
-        timestamps = pd.concat([
-            pd.Series([first_timestamp]),
-            timestamps
-        ]).reset_index(drop=True)
-
-        # Now build IntervalIndex
-        intervals = pd.IntervalIndex.from_arrays(
-            timestamps[:-1], timestamps[1:], closed='left'
-        )
-
-        return intervals
-
-
-def empty_rows(df: pd.DataFrame):
+def process_all_days(df: pd.DataFrame) -> dict[Hashable | datetime.date, pd.DataFrame]:
     """
-    Get the rows that are empty (zeros or NaN). These rows are assumed to be the same as the previous level. These
-    rows must be forward filled with the previous row
+    Process all the days of a given dataframe. Each day is processed in parallel using multiprocessing and the
+    process_day function. The results are aggregated into a dictionary with dates as keys and DataFrames as values.
+
+    Parameters
+    ----------
+    df : DataFrame containing the trade data.
+
+    Returns
+    -------
+    Dictionary with dates as keys and DataFrames as values. Each DataFrame contains the aggregated trade data for that date.
+    """
+    # Nothing to process
+    if df.empty:
+        return {}
+
+    # The nature column is not needed for the processing
+    df = df.drop(columns=['nature'])
+
+    # Group into days
+    groups = df.groupby(df['t'].dt.date)
+
+    # Use multiprocessing to process each group in parallel
+    items = [(group, date) for date, group in groups]
+    with multiprocessing.Pool() as pool:
+        processed_groups = pool.starmap(process_day, items)
+
+    # Concatenate the results into a dictionary
+    processed_groups = {date: data for date, data in processed_groups if not data.empty}
+
+    return processed_groups
+
+def process_day(df: pd.DataFrame, date: datetime.date) -> tuple[datetime.date, pd.DataFrame]:
+    """
+    Process a single day's data. The function checks for missing values, fixes them, and sets the time column as the
+    index.If the data is invalid, it returns an empty DataFrame.
+
+    Parameters
+    ----------
+    df : Dataframe with the data to be processed.
+    date: Date of the data to be processed.
+
+    Returns
+    -------
+    Dataframe with the aggregated data for the day.
+    """
+    # Check if we have any missing values
+    if is_invalid(df):
+        # print(f'Removed {date} due to missing values in the first level')
+        return date, pd.DataFrame()
+
+    # Fix all the missing data
+    df = fix_missing(df)
+
+    # Check if we have any missing values
+    if has_missing(df):
+#         print(f'Removed {date} due to missing values in the data')
+        return date, pd.DataFrame()
+
+    # Set the time column as the index
+    df = df.set_index('t')
+
+    return date, df
+
+def is_invalid(df: pd.DataFrame) -> bool:
+    """
+    Check if there are any missing values in the dataframe. It is expected that every observation has at least the first
+    level on the bid and ask side. If there are any missing values for the first level, the dataframe is considered to be
+    invalid.
 
     Parameters
     ----------
@@ -80,19 +105,27 @@ def empty_rows(df: pd.DataFrame):
 
     Returns
     -------
-
+    Boolean indicating whether the dataframe is invalid or not.
     """
-    is_empty = df.isna() | (df == 0)
-    missing_indices = is_empty.all(axis=1)
 
-    return missing_indices
+    # The columns we are interested in
+    columns = ['bb1', 'bbvol1', 'ba1', 'bavol1']
+    df_columns = df[columns]
+
+    # Checks for missing values (missing or zero)
+    invalid = df_columns.isna() * df_columns.eq(0)
+
+    # Checks if there are any missing values per column
+    invalid = invalid.any()
+
+    # Across all columns
+    return invalid.any()
 
 def fix_missing(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Fix missing data in the dataframe. If the whole row is empty (zeros or NaN), it is assumed that the LOB didn't
-    change, hence it filled by the last known value. If the row is partially empty, the previous level is used to fill
-    the missing values. In this case, the price is assumed to be the same as the previous level, and the quantity is
-    assumed to be zero.
+    Fix missing data in the dataframe. It is assumed that the first level is always present, as their prices
+    are used to fill the missing values in the other levels the missing values. The quantities are set to zero if they
+    are missing.
 
     Parameters
     ----------
@@ -102,15 +135,6 @@ def fix_missing(df: pd.DataFrame) -> pd.DataFrame:
     -------
     DataFrame with fixed data.
     """
-    # Finding the rows that are completely empty
-    missing_indices = empty_rows(df)
-
-    # Forward fill the missing values
-    df.loc[missing_indices] = df.loc[missing_indices].ffill()
-
-    # Bid and ask prices that are zero are replaced with NaN and forward filled
-    df[['bb1', 'ba1']] = df[['bb1', 'ba1']].replace(0, np.nan)
-    df[['bb1', 'ba1']] = df[['bb1', 'ba1']].ffill()
 
     # Fixing rows that are partially empty. Assumed to have 5 LOB levels
     levels = 5
@@ -127,9 +151,7 @@ def fix_missing(df: pd.DataFrame) -> pd.DataFrame:
 
         # May be zero or nan, hence we put everything to nan
         df[bid_price] = df[bid_price].replace(0, np.nan)
-        df[bid_quantity] = df[bid_quantity].replace(0, np.nan)
         df[ask_price] = df[ask_price].replace(0, np.nan)
-        df[ask_quantity] = df[ask_quantity].replace(0, np.nan)
 
         # Price is same as previous level
         df[bid_price] = df[bid_price].fillna(df[prev_bid_price])
@@ -141,84 +163,28 @@ def fix_missing(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
-def process_day(df: pd.DataFrame, date: datetime.date) -> tuple[datetime.date, pd.DataFrame]:
+def has_missing(df: pd.DataFrame) -> bool:
     """
-    Process a single day's data and aggregate it.
+    Check if the dataframe has any missing values. This function is used as a final check after processing the data.
+    If it returns True, there is likely something wrong with the dataset, which cannot be fixed by the previous methods.
 
     Parameters
     ----------
-    df : Dataframe with the data to be processed.
-    date: Date of the data to be processed.
+    df : DataFrame to check.
 
     Returns
     -------
-    Dataframe with the aggregated data for the day.
+    bool : True if the dataframe has missing values, False otherwise.
     """
-    # Fix all the missing data
-    df = fix_missing(df)
-
-    # Empty values likely mean that day does not have any data
     if df.isna().any().any():
-        return date, pd.DataFrame()
+        return True
 
-    # Check for zeros in any of the bid and ask prices
+    # Price checking
     for i in range(1, 6):
         bid_price = f'bb{i}'
         ask_price = f'ba{i}'
 
         if df[bid_price].eq(0).any() or df[ask_price].eq(0).any():
-            return date, pd.DataFrame()
+            return True
 
-    # Set the time column as the index
-    df = df.set_index('t')
-
-    # # Removes the day from the index and converts it to a string
-    # df.index = df.index.strftime('%H:%M:%S')
-
-    return date, df
-
-def unpack_args(args) -> tuple[datetime.date, pd.DataFrame]:
-    """
-    Unpack the arguments for the process_day function. This is used for multiprocessing.
-
-    Parameters
-    ----------
-    args : Tuple containing the arguments for the process_day function.
-    """
-    return process_day(*args)
-
-def process_all_days(df: pd.DataFrame) -> dict[Hashable | datetime.date, pd.DataFrame]:
-    """
-    Process all the trades of a given dataframe. All trades within this day are aggregated to a given interval.
-    The opening and closing auctions are also included in the aggregated data, with the first row being the opening auction
-    and the last row being the closing auction.
-
-    Parameters
-    ----------
-    df : DataFrame containing the trade data.
-
-    Returns
-    -------
-    Dictionary with dates as keys and DataFrames as values. Each DataFrame contains the aggregated trade data for that date.
-    """
-
-    if df.empty:
-        return {}
-
-    # The nature column is not needed for the processing
-    df = df.drop(columns=['nature'])
-
-    # Group into days
-    groups = df.groupby(df['t'].dt.date)
-
-    n_cores = multiprocessing.cpu_count()
-
-    # Use multiprocessing to process each group in parallel
-    items = [(group, date) for date, group in groups]
-    with multiprocessing.Pool(n_cores) as pool:
-        processed_groups = pool.map(unpack_args, items)
-
-    # Concatenate the results into a dictionary
-    processed_groups = {date: data for date, data in processed_groups if not data.empty}
-
-    return processed_groups
+    return False
