@@ -85,6 +85,13 @@ class BaseDatasetManager:
 
         return combine_dataset(self.dataset)
 
+    def clear_memory(self):
+        """
+        Empty the dataset. This is used to clear the memory after the dataset has been used.
+        """
+        torch.cuda.empty_cache()
+        gc.collect()
+
 def generate_month_path(path: str, date: date_type) -> str:
     """
     Generate the path for the month. The path is assumed to be in the format 'YYYY-MM'.
@@ -239,10 +246,3 @@ def generate_dates(start_date: date_type, end_date: date_type) -> list[date_type
             year += 1
 
     return dates
-
-def clear_memory():
-    """
-    Empty the dataset. This is used to clear the memory after the dataset has been used.
-    """
-    torch.cuda.empty_cache()
-    gc.collect()
