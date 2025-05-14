@@ -106,32 +106,34 @@ def train(model: BaseModel, train_data: list[DatasetTuple], sequence_size: int,
     # Initialize the loss function, optimizer and dataloaders
     loss = BCEWithLogitsLoss(reduction='none')
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-    loaders = create_loader(train_data, sequence_size, batch_size)
+    total_return = compute_total_return(train_data)
 
     model.train()
     for epoch in range(epochs):
         total_loss = 0
-        for loader in loaders:
-            for x, y, weights in loader:
-                # Moving everything to the device
-                x = x.to(model.device)
-                y = y.to(model.device)
-                weights = weights.to(model.device)
+        for x, y in train_data:
+            weights = compute_sample_weights(y, total_return)
+            x = x[:, -sequence_size:, :]
 
-                # Training requires y to be binary
-                y = convert_to_classification(y)
+            # Moving everything to the device
+            x = x.to(model.device)
+            y = y.to(model.device)
+            weights = weights.to(model.device)
 
-                # Forward pass
-                y_pred = model(x)
-                loss_per_sample = loss(y_pred, y)
-                weighted_loss = weights * loss_per_sample
-                loss_value = weighted_loss.sum()
-                total_loss += loss_value.item()
+            # Training requires y to be binary
+            y = convert_to_classification(y)
 
-                # Backward pass
-                optimizer.zero_grad()
-                loss_value.backward()
-                optimizer.step()
+            # Forward pass
+            y_pred = model(x)
+            loss_per_sample = loss(y_pred, y)
+            weighted_loss = weights * loss_per_sample
+            loss_value = weighted_loss.sum()
+            total_loss += loss_value.item()
+
+            # Backward pass
+            optimizer.zero_grad()
+            loss_value.backward()
+            optimizer.step()
 
         if verbose:
             average_loss = total_loss
@@ -156,7 +158,7 @@ def evaluate(model: BaseModel, data: list[DatasetTuple], sequence_size: int, bat
     # Setup
     profit_calculator = ProfitCalculator()
     loss_fn = BCEWithLogitsLoss(reduction='none')
-    dataloaders = create_loader(data, sequence_size, batch_size)
+    total_return = compute_total_return(data)
     model.eval()
 
     with torch.no_grad():
@@ -164,28 +166,30 @@ def evaluate(model: BaseModel, data: list[DatasetTuple], sequence_size: int, bat
         average_accuracy = 0
         average_loss = 0
         total_samples = 0
-        for loader in dataloaders:
-            for x, y, weights in loader:
-                x = x.to(model.device)
-                y = y.to(model.device)
-                weights = weights.to(model.device)
-                y_pred = model(x)
+        for x, y in data:
+            weights = compute_sample_weights(y, total_return)
+            x = x[:, -sequence_size:, :]
 
-                profit = profit_calculator(y_pred, y)
+            x = x.to(model.device)
+            y = y.to(model.device)
+            weights = weights.to(model.device)
+            y_pred = model(x)
 
-                # Accuracy checks if sign match
-                accuracy = ((y_pred * y) > 0).float().sum()
+            profit = profit_calculator(y_pred, y)
 
-                # Loss requires y to be binary
-                y = convert_to_classification(y)
-                loss = loss_fn(y_pred, y)
-                loss = loss * weights
-                loss = loss.sum()
+            # Accuracy checks if sign match
+            accuracy = ((y_pred * y) > 0).float().sum()
 
-                average_profit += profit.item() * len(y)
-                average_accuracy += accuracy.item()
-                average_loss += loss.item()
-                total_samples += len(y)
+            # Loss requires y to be binary
+            y = convert_to_classification(y)
+            loss = loss_fn(y_pred, y)
+            loss = loss * weights
+            loss = loss.sum()
+
+            average_profit += profit.item() * len(y)
+            average_accuracy += accuracy.item()
+            average_loss += loss.item()
+            total_samples += len(y)
 
         # Sample based
         average_profit /= total_samples
