@@ -1,11 +1,9 @@
-from Models.ConvolutionalModels.LimitOrderBookConvolve import LimitOrderBookConvolve
+from Models.ConvolutionalModels.LobConvolve import LobConvolve
 from Modeling.HyperOptimizer import HyperOptimizer
-from Modeling.DatasetManager import DatasetManager
+from Modeling.DatasetManagers.LimitOrderBookDatasetManager import LimitOrderBookDatasetManager
 import os
 
-def objective(trial):
-    sequence_size = 420
-
+def model_parameters(trial, sequence_size):
     # Number of layers
     n_conv_layers = trial.suggest_int('n_conv_layers', 1, 5)
     n_fc_layers = trial.suggest_int('n_fc_layers', 1, 5)
@@ -30,39 +28,54 @@ def objective(trial):
         fc_neurons.append(fc_neurons_multiple * 8)
 
     # Dropout rate are multiple of 0.1
-    dropout_rate_multiple = trial.suggest_int('dropout_rate_multiple', 0, 5)
+    dropout_rate_multiple = trial.suggest_int('dropout_power', 0, 5)
     dropout_rate = dropout_rate_multiple * 0.1
 
-    # Learning rate is a power of 10
-    lr_power = trial.suggest_int('lr_power', -5, -2)
-    lr = 10 ** lr_power
-
-    # Number of epochs is multiple of 5
-    epochs_multiple = trial.suggest_int('epochs_multiple', 1, 10)
-    epochs = epochs_multiple * 5
-
-    # Setup model
-    model = LimitOrderBookConvolve(
+    model = LobConvolve(
         sequence_size=sequence_size,
         conv_channels=conv_channels,
         fc_neurons=fc_neurons,
         kernel_size=kernel_sizes,
         dropout=dropout_rate
     )
+    model.to('cuda')
 
-    return model, epochs, lr
+    return model, sequence_size
+
+def objective(trial):
+    # Sequence size is a multiple of 5
+    sequence_size_multiple = trial.suggest_int('sequence_size_multiple', 12, 72)
+    sequence_size = sequence_size_multiple * 5
+
+    # Model parameters
+    model, sequence_size = model_parameters(trial, sequence_size)
+
+    # Learning rate is a power of 10
+    lr_power = trial.suggest_int('lr_power', -4, -2)
+    lr = 10 ** lr_power
+
+    # Number of epochs is multiple of 5
+    epochs_multiple = trial.suggest_int('epochs_multiple', 1, 10)
+    epochs = epochs_multiple * 5
+
+    # Batch size is a power of 2
+    batch_size_power = trial.suggest_int('batch_size_power', 4, 8)
+    batch_size = 2 ** batch_size_power
+
+    return model, epochs, lr, batch_size, sequence_size
 
 if __name__ == '__main__':
-    path_to_data = 'data/merged_files'
+    path_to_data = 'data/intraday'
 
     # Save path of results
     results = 'results/hyperparameters'
     os.makedirs(results, exist_ok=True)
 
     # Train the model
-    dataset = DatasetManager(path_to_data)
-    optimizer = HyperOptimizer(dataset, '2021-1')
-    save_path = os.path.join(results, 'cnn')
-    optimizer.optimize(objective, results, n_trials=100)
+    train_manager = LimitOrderBookDatasetManager(path_to_data, 9)
+    test_manager = LimitOrderBookDatasetManager(path_to_data, 1)
+    optimizer = HyperOptimizer(train_manager, test_manager, '2021-1')
+    save_path = os.path.join(results, 'cnn.csv')
+    optimizer.optimize(objective, save_path, n_trials=100)
 
 
