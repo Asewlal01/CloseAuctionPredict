@@ -39,7 +39,7 @@ class WalkForwardTester:
         """
         # Get the training and validation data
         train_data = self.train_manager.get_dataset(sequence_size=self.sequence_size,
-                                                    normalize=True, binary_classification=False)
+                                                    normalize=False, binary_classification=False)
 
         # Train the model
         train(self.model, train_data, epochs, learning_rate, batch_size, verbose)
@@ -55,7 +55,7 @@ class WalkForwardTester:
         """
         # Get the training and validation data
         train_data = self.train_manager.get_dataset(sequence_size=self.sequence_size,
-                                                    normalize=True, binary_classification=False)
+                                                    normalize=False, binary_classification=False)
 
         evaluation = evaluate(self.model, train_data)
 
@@ -71,7 +71,7 @@ class WalkForwardTester:
         """
         # Get the training, validation and test data
         test_data = self.test_manager.get_dataset(sequence_size=self.sequence_size,
-                                                  normalize=True, binary_classification=False)
+                                                  normalize=False, binary_classification=False)
 
         evaluation = evaluate(self.model, test_data)
 
