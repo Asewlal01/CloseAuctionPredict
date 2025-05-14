@@ -45,9 +45,12 @@ class HyperOptimizer:
         test_year, test_month = increment_month(year, month, train_length)
         test_start_month = f'{test_year}-{test_month}'
 
+        # Batch size is fixed
+        batch_size = 16
+
         # Function to optimize
         def objective(trial):
-            model, epochs, lr, batch_size, sequence_size = model_fn(trial)
+            model, epochs, lr, sequence_size = model_fn(trial)
             self.train_manager.setup_dataset(train_start_month)
             self.test_manager.setup_dataset(test_start_month)
 
