@@ -54,7 +54,7 @@ class BaseDatasetManager:
         del self.dataset[0]
 
         # Completely clear the memory
-        clear_memory()
+        self.clear_memory()
 
         # Recompute the start date
         start_year, start_month = self.start
