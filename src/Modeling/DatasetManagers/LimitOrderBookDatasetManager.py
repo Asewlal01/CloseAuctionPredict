@@ -2,10 +2,12 @@ from Modeling.DatasetManagers.BaseDatasetManager import BaseDatasetManager
 import torch
 
 class LimitOrderBookDatasetManager(BaseDatasetManager):
+    """
+    This class is used to manage the Limit Order Book dataset.
+    """
     def normalize(self) -> torch.tensor:
         """
         Normalize the dataset.
-
         """
         # We do not want to override the original dataset
         x, y = self.dataset
@@ -23,8 +25,18 @@ class LimitOrderBookDatasetManager(BaseDatasetManager):
 
         return x, y
 
+def normalize_prices(x: torch.Tensor) -> torch.Tensor:
+    """
+    Normalize the prices in the dataset.
 
-def normalize_prices(x):
+    Parameters
+    ----------
+    x : Input tensor to normalize
+
+    Returns
+    -------
+    Normalized tensor
+    """
     # Price columns are even columns
     price_columns = torch.arange(0, 20, 2)
 
@@ -45,7 +57,18 @@ def normalize_prices(x):
 
     return x
 
-def normalize_volumes(x):
+def normalize_volumes(x: torch.Tensor) -> torch.Tensor:
+    """
+    Normalize the volumes in the dataset.
+
+    Parameters
+    ----------
+    x : Input tensor to normalize
+
+    Returns
+    -------
+    Normalized tensor
+    """
     # Volume columns are uneven columns
     volume_columns = torch.arange(1, 20, 2)
 
@@ -58,7 +81,20 @@ def normalize_volumes(x):
 
     return x
 
-def filter_outliers(x, y):
+def filter_outliers(x: torch.Tensor, y: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Filter out the outliers from the dataset. This should be used after normalizing, since it removes samples
+    that have values greater than 1 or lesser than 0 in the input tensor.
+
+    Parameters
+    ----------
+    x : Normalized input tensor
+    y : Expected output tensor
+
+    Returns
+    -------
+    Filtered input and output tensors
+    """
     # Some results will have values that are greater than 1 or less than 0, which should be impossible
     # Find where x is greater than 1 or less than 0
     mask = ((x >= 0) & (x <= 1))
