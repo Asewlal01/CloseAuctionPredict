@@ -2,14 +2,13 @@ import torch
 import os
 from typing import Tuple
 import gc
-import multiprocessing
 
 date_type = list[int]
 
 DatasetTuple = Tuple[torch.Tensor, torch.Tensor]
 
 class BaseDatasetManager:
-    def __init__(self, dataset_path: str, num_months: int, sequence_size: int=-1):
+    def __init__(self, dataset_path: str, num_months: int):
         """
         Initialize the dataset manager.
 
@@ -17,11 +16,9 @@ class BaseDatasetManager:
         ----------
         dataset_path : Path to the dataset directory. Assumed to contain subfolders which represent the data for each month
         num_months : Number of months to load
-        sequence_size : Size of the sequence to keep. If -1, the entire sequence is kept.
         """
         self.dataset_path = dataset_path
         self.num_months = num_months
-        self.sequence_size = sequence_size
 
         self.start = None
         self.end = None
@@ -76,12 +73,13 @@ class BaseDatasetManager:
         torch.cuda.empty_cache()
         gc.collect()
 
-    def get_dataset(self, normalize: bool=True, binary_classification: bool=True) -> DatasetTuple:
+    def get_dataset(self, sequence_size: int=-1, normalize: bool=True, binary_classification: bool=True) -> DatasetTuple:
         """
         Get the dataset. The dataset is a tuple of the form (X, y). The X is the input variable and y is the output variable.
 
         Parameters
         ----------
+        sequence_size : Size of the sequence to be used. If -1, the entire dataset is used.
         normalize : Boolean indicating whether to normalize the dataset. If True, the dataset is normalized.
         binary_classification : Boolean indicating whether the output variable is a binary classification problem.
         If True, the output variable is converted to a binary classification problem (0 or 1)
@@ -104,8 +102,8 @@ class BaseDatasetManager:
             y = convert_to_classification(y)
 
         # Ony keep sequence length
-        if self.sequence_size > 0:
-            x = x[:, -self.sequence_size:, :]
+        if sequence_size > 0:
+            x = x[:, -sequence_size:, :]
 
         return x, y
 
@@ -213,11 +211,22 @@ def combine_dataset(datasets: list[DatasetTuple]) -> DatasetTuple:
     """
     Xs, ys = zip(*datasets)
 
-    # Concatenate all the data
-    X = torch.concatenate(Xs, dim=0)
-    y = torch.concatenate(ys)
+    # Preallocate the tensors
+    samples = sum(y.shape[0] for y in ys)
+    sequence_size = Xs[0].shape[1]
+    features = Xs[0].shape[2]
 
-    return X, y
+    X_final = torch.empty((samples, sequence_size, features), dtype=Xs[0].dtype)
+    y_final = torch.empty((samples, 1), dtype=ys[0].dtype)
+
+    current = 0
+    for x, y in datasets:
+        n = y.shape[0]
+        X_final[current: current + n] = x
+        y_final[current: current + n] = y
+        current += n
+
+    return X_final, y_final
 
 def convert_to_classification(y) -> torch.Tensor:
     """
