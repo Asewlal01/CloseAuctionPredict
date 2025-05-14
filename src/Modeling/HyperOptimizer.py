@@ -64,7 +64,6 @@ class HyperOptimizer:
                 model.reset_parameters()
                 self.train_manager.increment_dataset()
                 self.test_manager.increment_dataset()
-                print('Incrementing dataset...')
 
             return average_loss
 
