@@ -30,7 +30,7 @@ class BaseModel(nn.Module):
         self.build_fully_connected_layers()
 
 
-    def forward(self, x: torch.Tensor, z: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Perform forward pass of the model. This method should be implemented by all the Models that inherit from
         this class as it is the main method that is called when the model is used.
@@ -38,38 +38,36 @@ class BaseModel(nn.Module):
         Parameters
         ----------
         x : Input tensor
-        z: Input tensor with information of yesterday's closing return and overnight return
 
         Returns
         -------
         Output tensor
 
         """
+        # Model specific layers
         for layer in self.layers:
             x = layer(x)
 
-        # Combining x and z into a single tensor
-        # x = torch.cat((x, z), dim=1)
+        # Fully connected layers
         for layer in self.fc_layers:
             x = layer(x)
 
         return x
 
-    def predict(self, x: torch.Tensor, z: torch.Tensor) -> torch.Tensor:
+    def predict(self, x: torch.Tensor) -> torch.Tensor:
         """
         Perform forward pass of the model, and apply sigmoid activation function to the output.
 
         Parameters
         ----------
         x : Input tensor
-        z: Input tensor with information of yesterday's closing return and overnight return
 
         Returns
         -------
         Output tensor
 
         """
-        x = self.forward(x, z)
+        x = self.forward(x)
         return torch.sigmoid(x)
 
     def build_model(self) -> None:
@@ -87,8 +85,6 @@ class BaseModel(nn.Module):
         if self.output_dim == 0:
             raise AttributeError("The attribute `output_dim` is not defined in the model.")
 
-        # Add two to the input dimension because we are concatenating the input tensor with z
-        # self.output_dim = self.output_dim + 2
         self.output_dim = self.output_dim
         if self.fc_neurons is None:
             return
@@ -100,7 +96,6 @@ class BaseModel(nn.Module):
             )
             input_dim = out_neurons
 
-        # Output layer
         self.fc_layers.append(
             nn.Linear(input_dim, 1)
         )
