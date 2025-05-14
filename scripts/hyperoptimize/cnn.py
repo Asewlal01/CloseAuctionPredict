@@ -81,12 +81,6 @@ def run_study():
     optimizer.optimize(objective, name, results, n_trials=trials)
 
 if __name__ == '__main__':
-    processes = 4
-    processes = [multiprocessing.Process(target=run_study) for _ in range(processes)]
-
-    for p in processes:
-        p.start()
-    for p in processes:
-        p.join()
+    run_study()
 
 
