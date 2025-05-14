@@ -68,14 +68,14 @@ if __name__ == '__main__':
     path_to_data = 'data/intraday'
 
     # Save path of results
-    results = 'results/hyperparameters'
+    results = 'results/hyperparameters_intraday'
+    name = 'cnn'
     os.makedirs(results, exist_ok=True)
 
     # Train the model
     train_manager = LimitOrderBookDatasetManager(path_to_data, 9)
     test_manager = LimitOrderBookDatasetManager(path_to_data, 1)
     optimizer = HyperOptimizer(train_manager, test_manager, '2021-1')
-    save_path = os.path.join(results, 'cnn.csv')
-    optimizer.optimize(objective, save_path, n_trials=100)
+    optimizer.optimize(objective, name, results, n_trials=100)
 
 

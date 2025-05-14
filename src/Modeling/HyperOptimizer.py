@@ -2,6 +2,7 @@ from Modeling.DatasetManagers.BaseDatasetManager import BaseDatasetManager, spli
 from Modeling.WalkForwardTester import WalkForwardTester
 import optuna
 
+MAX_WALK_FORWARD_STEPS = 3
 
 class HyperOptimizer:
     """
@@ -22,7 +23,7 @@ class HyperOptimizer:
         self.test_manager = test_manager
         self.start_month = start_month
 
-    def optimize(self, model_fn: callable, save_path: str, n_trials: int = 100):
+    def optimize(self, model_fn: callable, name: str, save_path: str, n_trials: int = 100):
         """
         Optimize the hyperparameters of the model.
 
@@ -30,6 +31,7 @@ class HyperOptimizer:
         ----------
         model_fn : The function to create the model. Should take trail as an argument and return a model, number of
         epochs, learning rate and batch size.
+        name : The name of the study.
         save_path : The path to save the results.
         n_trials : The number of trials to run.  Default is 100.
         """
@@ -53,21 +55,30 @@ class HyperOptimizer:
             tester = WalkForwardTester(model, self.train_manager, self.test_manager, sequence_size)
 
             average_loss = 0
-            for i in range(3):
+            i = 0
+            while i < MAX_WALK_FORWARD_STEPS:
                 tester.train(epochs, lr, batch_size, verbose=False)
-                evaluation = tester.evaluate_on_test()
-
-                # We only need the accuracy
-                loss = evaluation[2]
-                average_loss += loss / 3
+                _, _, loss = tester.evaluate_on_test()
+                average_loss += loss / MAX_WALK_FORWARD_STEPS
 
                 model.reset_parameters()
-                self.train_manager.increment_dataset()
-                self.test_manager.increment_dataset()
+
+                if i + 1 < MAX_WALK_FORWARD_STEPS:
+                    # Increment the dataset
+                    self.train_manager.increment_dataset()
+                    self.test_manager.increment_dataset()
+
+                i += 1
+
+            # Clear the memory
+            self.train_manager.empty_dataset()
+            self.test_manager.empty_dataset()
 
             return average_loss
 
-        study = optuna.create_study(direction='minimize', study_name='hyperparameter_optimization')
+        storage = f'sqlite:///{save_path}/results.db'
+        study = optuna.create_study(direction='minimize', study_name=name,
+                                    storage=storage, load_if_exists=True)
 
         # Optimize the objective function
         study.optimize(objective, n_trials=n_trials)
