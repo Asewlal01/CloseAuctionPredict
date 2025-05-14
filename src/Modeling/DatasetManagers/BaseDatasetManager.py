@@ -23,7 +23,7 @@ class BaseDatasetManager:
         self.start = None
         self.end = None
 
-        self.dataset: tuple[torch.Tensor, torch.Tensor] = torch.empty(0), torch.empty(0)
+        self.dataset: list[list[DatasetTuple]] = []
 
     def setup_dataset(self, start_month: str):
         """
@@ -43,91 +43,47 @@ class BaseDatasetManager:
         # Generate all the months to loop over
         months = generate_dates(self.start, self.end)
         month_paths = [generate_month_path(self.dataset_path, month) for month in months]
-
-        # Load all files
-        results = []
-        for month_path in month_paths:
-            results.extend(load_data(month_path))
-        self.dataset = combine_dataset(results)
+        self.dataset = [load_data(month_path) for month_path in month_paths]
 
     def increment_dataset(self):
         """
         Increment the dataset by adding one month.
         """
 
-        # Completely clear the memory
-        self.empty_dataset()
+        # Remove the first month from the dataset
+        del self.dataset[0]
 
-        # Recompute the start and end dates
+        # Completely clear the memory
+        clear_memory()
+
+        # Recompute the start date
         start_year, start_month = self.start
         incremented_year, incremented_month = increment_month(start_year, start_month, 1)
 
-        self.setup_dataset(f'{incremented_year}-{incremented_month}')
+        # Recompute the end date
+        end_year, end_month = self.end
+        incremented_end_year, incremented_end_month = increment_month(end_year, end_month, 1)
 
-    def empty_dataset(self):
-        """
-        Empty the dataset. This is used to clear the memory after the dataset has been used.
-        """
-        del self.dataset
-        self.dataset = None
-        torch.cuda.empty_cache()
-        gc.collect()
+        # Update the start and end dates
+        self.start = [incremented_year, incremented_month]
+        self.end = [incremented_end_year, incremented_end_month]
 
-    def get_dataset(self, sequence_size: int=-1, normalize: bool=True, binary_classification: bool=True) -> DatasetTuple:
-        """
-        Get the dataset. The dataset is a tuple of the form (X, y). The X is the input variable and y is the output variable.
+        # Load data of the last month
+        month_path = generate_month_path(self.dataset_path, self.end)
+        self.dataset.append(load_data(month_path))
 
-        Parameters
-        ----------
-        sequence_size : Size of the sequence to be used. If -1, the entire dataset is used.
-        normalize : Boolean indicating whether to normalize the dataset. If True, the dataset is normalized.
-        binary_classification : Boolean indicating whether the output variable is a binary classification problem.
-        If True, the output variable is converted to a binary classification problem (0 or 1)
+    def get_dataset(self) -> list[DatasetTuple]:
+        """r
+        Returns all the datasets concatenated to one list. Each element represents one day worth of data.
 
         Returns
         -------
-        Tuple containing the input variable and the output variable.
+        List of daily datasets. Each dataset is a tuple of the form (X, y).
         """
         if self.dataset is None:
             raise ValueError('Dataset not set up. Please call setup_dataset() first.')
 
-        x, y = self.dataset
-
-        # Normalizing the features
-        if normalize:
-            x, y = self.normalize()
-
-        # Convert the output variable to a binary classification problem
-        if binary_classification:
-            y = convert_to_classification(y)
-
-        # Ony keep sequence length
-        if sequence_size > 0:
-            x = x[:, -sequence_size:, :]
-
-        return x, y
-
-    def to_classification(self):
-        """
-        Convert the dataset to a binary classification problem. The output variable is converted to a binary classification
-        problem (0 or 1). This is used for binary classification problems.
-        """
-        if self.dataset is None:
-            raise ValueError('Dataset not set up. Please call setup_dataset() first.')
-
-        # We do not want to override the original dataset
-        y = self.dataset[1].clone()
-
-        # Convert the output variable to a binary classification problem
-        y = convert_to_classification(y)
-
-        return y
-
-    def normalize(self):
-        """
-        Normalize the dataset. The dataset is assumed to be a tuple of the form (X, y). The X is the input variable and y is the output variable.
-        """
-        raise NotImplementedError("Normalization not implemented in the base class. Please implement in the derived class.")
+        return combine_dataset(self.dataset)
 
 def generate_month_path(path: str, date: date_type) -> str:
     """
@@ -197,9 +153,12 @@ def split_month(month: str) -> list[int]:
     year, month = month.split('-')
     return [int(year), int(month)]
 
-def combine_dataset(datasets: list[DatasetTuple]) -> DatasetTuple:
+def combine_dataset(datasets: list[list[DatasetTuple]]) -> list[DatasetTuple]:
     """
-    Combine all the datasets for each month into a combined dataset. The datasets are assumed to be in the format
+    Concatenate all the days of the month into a single dataset. The initial dataset is assumed to be of the form
+    list[list[DatasetTuple]], indicating that each month contains a list of days, and each day contains a tuple of the
+    form (X, y). After concatenation, the dataset is of the form list[DatasetTuple], indicating that each day is a
+    tuple of the form (X, y).
 
     Parameters
     ----------
@@ -209,24 +168,11 @@ def combine_dataset(datasets: list[DatasetTuple]) -> DatasetTuple:
     -------
     Combined dataset as a list of tuples.
     """
-    Xs, ys = zip(*datasets)
+    results = []
+    for dataset in datasets:
+        results.extend(dataset)
 
-    # Preallocate the tensors
-    samples = sum(y.shape[0] for y in ys)
-    sequence_size = Xs[0].shape[1]
-    features = Xs[0].shape[2]
-
-    X_final = torch.empty((samples, sequence_size, features), dtype=Xs[0].dtype)
-    y_final = torch.empty((samples, 1), dtype=ys[0].dtype)
-
-    current = 0
-    for x, y in datasets:
-        n = y.shape[0]
-        X_final[current: current + n] = x
-        y_final[current: current + n] = y
-        current += n
-
-    return X_final, y_final
+    return results
 
 def convert_to_classification(y) -> torch.Tensor:
     """
@@ -293,3 +239,10 @@ def generate_dates(start_date: date_type, end_date: date_type) -> list[date_type
             year += 1
 
     return dates
+
+def clear_memory():
+    """
+    Empty the dataset. This is used to clear the memory after the dataset has been used.
+    """
+    torch.cuda.empty_cache()
+    gc.collect()
