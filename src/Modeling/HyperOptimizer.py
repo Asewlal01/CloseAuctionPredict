@@ -71,10 +71,11 @@ class HyperOptimizer:
                 i += 1
 
             # Clear the memory
-            self.train_manager.empty_dataset()
-            self.test_manager.empty_dataset()
+            self.train_manager.clear_memory()
+            self.test_manager.clear_memory()
 
             return average_loss
+
 
         storage = f'sqlite:///{save_path}/results.db'
         study = optuna.create_study(direction='minimize', study_name=name,
