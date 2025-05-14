@@ -1,6 +1,6 @@
 from Models.ConvolutionalModels.LobConvolve import LobConvolve
 from Modeling.HyperOptimizer import HyperOptimizer
-from Modeling.DatasetManagers.LimitOrderBookDatasetManager import LimitOrderBookDatasetManager
+from Modeling.DatasetManagers.BaseDatasetManager import BaseDatasetManager
 import os
 
 def model_parameters(trial, sequence_size):
@@ -73,8 +73,8 @@ if __name__ == '__main__':
     os.makedirs(results, exist_ok=True)
 
     # Train the model
-    train_manager = LimitOrderBookDatasetManager(path_to_data, 9)
-    test_manager = LimitOrderBookDatasetManager(path_to_data, 1)
+    train_manager = BaseDatasetManager(path_to_data, 9)
+    test_manager = BaseDatasetManager(path_to_data, 1)
     optimizer = HyperOptimizer(train_manager, test_manager, '2021-1')
     optimizer.optimize(objective, name, results, n_trials=100)
 
