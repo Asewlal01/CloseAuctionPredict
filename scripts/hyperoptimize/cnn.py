@@ -73,9 +73,9 @@ if __name__ == '__main__':
     os.makedirs(results, exist_ok=True)
 
     # Train the model
-    train_manager = BaseDatasetManager(path_to_data, 9)
+    train_manager = BaseDatasetManager(path_to_data, 1)
     test_manager = BaseDatasetManager(path_to_data, 1)
-    optimizer = HyperOptimizer(train_manager, test_manager, '2021-1')
+    optimizer = HyperOptimizer(train_manager, test_manager, '2021-1', 11)
     optimizer.optimize(objective, name, results, n_trials=100)
 
 

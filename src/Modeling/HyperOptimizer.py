@@ -2,14 +2,13 @@ from Modeling.DatasetManagers.BaseDatasetManager import BaseDatasetManager, spli
 from Modeling.WalkForwardTester import WalkForwardTester
 import optuna
 
-MAX_WALK_FORWARD_STEPS = 3
-
 class HyperOptimizer:
     """
     Class to optimize the hyperparameters of the model using Optuna.
     """
 
-    def __init__(self, train_manager: BaseDatasetManager, test_manager: BaseDatasetManager, start_month: str):
+    def __init__(self, train_manager: BaseDatasetManager, test_manager: BaseDatasetManager, start_month: str,
+                 months_to_evaluate: int = 1):
         """
         Initialize the hyperparameter optimizer.
 
@@ -18,10 +17,12 @@ class HyperOptimizer:
         train_manager : The dataset manager to be used for training.
         test_manager : The dataset manager to be used for testing.
         start_month : The starting month for the training data. Format: 'YYYY-MM'
+        months_to_evaluate : The number of months to evaluate for the training data.
         """
         self.train_manager = train_manager
         self.test_manager = test_manager
         self.start_month = start_month
+        self.months_to_evaluate = months_to_evaluate
 
     def optimize(self, model_fn: callable, name: str, save_path: str, n_trials: int = 100):
         """
@@ -38,9 +39,10 @@ class HyperOptimizer:
         # Starting month
         train_start_month = self.start_month
 
-        # Testing is 9 months after the training
+        # Testing is 1 month after training end
+        train_length = self.train_manager.num_months
         year, month = split_month(train_start_month)
-        test_year, test_month = increment_month(year, month, 9)
+        test_year, test_month = increment_month(year, month, train_length)
         test_start_month = f'{test_year}-{test_month}'
 
         # Function to optimize
@@ -56,14 +58,14 @@ class HyperOptimizer:
 
             average_loss = 0
             i = 0
-            while i < MAX_WALK_FORWARD_STEPS:
+            while i < self.months_to_evaluate:
                 tester.train(epochs, lr, batch_size, verbose=False)
                 _, _, loss = tester.evaluate_on_test()
-                average_loss += loss / MAX_WALK_FORWARD_STEPS
+                average_loss += loss / self.months_to_evaluate
 
                 model.reset_parameters()
 
-                if i + 1 < MAX_WALK_FORWARD_STEPS:
+                if i + 1 < self.months_to_evaluate:
                     # Increment the dataset
                     self.train_manager.increment_dataset()
                     self.test_manager.increment_dataset()
