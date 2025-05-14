@@ -1,5 +1,5 @@
 import os
-from Modeling.DatasetManager import generate_dates, date_type
+from Modeling.DatasetManagers.BaseDatasetManager import generate_dates, date_type
 import pandas as pd
 import numpy as np
 import multiprocessing
@@ -151,6 +151,16 @@ def process_file(file_path: str, horizon: int, sequence_size: int, samples_to_ke
     x = construct_features(df, horizon, sequence_size, samples_to_keep)
     y = construct_labels(df, horizon, sequence_size, samples_to_keep)
 
+    # Return if empty
+    if x.size == 0 or y.size == 0:
+        return np.array([]), np.array([])
+
+    # Normalize the features
+    x = normalize_features(x)
+
+    # Filter outliers
+    x, y = filter_outliers(x, y)
+
     # Checks if the two arrays are the same length
     if x.shape[0] != y.shape[0]:
         print(f"File {file_path} has different lengths for x and y: {x.shape[0]} vs {y.shape[0]}")
@@ -180,6 +190,84 @@ def construct_features(df: pd.DataFrame, horizon: int, sequence_size: int, sampl
     if np.isnan(x).any():
         print("NaN values found in x")
         return np.array([])
+
+    return x
+
+def normalize_features(x: np.ndarray) -> np.ndarray:
+    """
+    Normalize the features using min-max normalization. It uses the lowest bid and highest ask prices to normalize the
+    price features. The volumes are normalized by considering all volume features.
+
+    Parameters
+    ----------
+    x : Input features to be normalized.
+
+    Returns
+    -------
+    Normalized features.
+    """
+    # Normalize the prices
+    x = normalize_prices(x)
+
+    # Normalize the volumes
+    x = normalize_volumes(x)
+
+    return x
+
+
+def normalize_prices(x: np.ndarray) -> np.ndarray:
+    """
+    Normalize the price features using min-max normalization. It uses the lowest bid and highest ask prices to
+    normalize the price features.
+    Parameters
+    ----------
+    x
+
+    Returns
+    -------
+
+    """
+    # Price columns are even columns
+    price_columns = np.arange(0, 20, 2)
+
+    # Min-Max is based on highest ask and lowest bid
+    lowest_bid_price = x[:, :, price_columns[4]]
+    highest_ask_price = x[:, :, price_columns[9]]
+
+    # Find the max and min values
+    min_price = lowest_bid_price.min(axis=1, keepdims=True)
+    max_price = highest_ask_price.max(axis=1, keepdims=True)
+
+    # Both tensors need to be 3D for broadcasting
+    min_price = min_price[:, np.newaxis, :]
+    max_price = max_price[:, np.newaxis, :]
+
+    # Normalize the prices
+    x[:, :, price_columns] = (x[:, :, price_columns] - min_price) / (max_price - min_price)
+
+    return x
+
+def normalize_volumes(x: np.ndarray) -> np.ndarray:
+    """
+    Normalize the volume features using min-max normalization. It uses all the volume features to normalize the
+
+    Parameters
+    ----------
+    x
+
+    Returns
+    -------
+
+    """
+    # Volume columns are uneven columns
+    volume_columns = np.arange(1, 20, 2)
+
+    # Min-Max is based on all the columns
+    min_volume = x[:, :, volume_columns].min(axis=(1, 2), keepdims=True)
+    max_volume = x[:, :, volume_columns].max(axis=(1, 2), keepdims=True)
+
+    # Normalize
+    x[:, :, volume_columns] = (x[:, :, volume_columns] - min_volume) / (max_volume - min_volume)
 
     return x
 
@@ -224,6 +312,16 @@ def construct_labels(df: pd.DataFrame, horizon: int, sequence_size: int, samples
         return np.array([])
 
     return y
+
+def filter_outliers(x, y):
+    # Some results will have values that are greater than 1 or less than 0, which should be impossible
+    # Find where x is greater than 1 or less than 0
+    mask = ((x >= 0) & (x <= 1))
+
+    # We want to get it per sample
+    mask = mask.all(axis=(1, 2))
+
+    return x[mask], y[mask]
 
 def tensor_save(results, save_path: str, date: str) -> None:
     """

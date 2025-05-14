@@ -5,6 +5,7 @@ import numpy as np
 import fastparquet
 import datetime
 from tqdm import tqdm
+from Modeling.DatasetManager import date_type, generate_dates
 
 processed_data_type = dict[str, np.ndarray]
 
@@ -99,35 +100,6 @@ class DatasetAssembler:
                 process_month(files, save_dir, self.sequence_size, self.n_cores)
 
                 pbar.update(1)
-
-def generate_dates(start_date: date_type, end_date: date_type) -> list[date_type]:
-    """
-    Generate a list of dates between the start and end date. The dates are given as [year, month].
-
-    Parameters
-    ----------
-    start_date : Start date to process the trades from. Given as [year, month]
-    end_date : End date to process the trades to. Given as [year, month]
-
-    Returns
-    -------
-    List of dates between the start and end date
-    """
-    start_year, start_month = start_date
-    end_year, end_month = end_date
-
-    dates = []
-    year, month = start_year, start_month
-
-    # Checks if we are before the end year, or before the end month in the same year
-    while (year < end_year) or (year == end_year and month <= end_month):
-        dates.append([year, month])
-        month += 1
-        if month > 12:
-            month = 1
-            year += 1
-
-    return dates
 
 def get_files(stock_path: str, year: int, month: int) -> list[str]:
     """
@@ -423,23 +395,23 @@ def process_file(df: pd.DataFrame, previous_df: pd.DataFrame, sequence_length: i
     result['previous_return'] = np.array([previous_return])
 
     # Since the length of the df can be greater than the sequence length, we need to combine the first few rows
-    df = match_sequence_length(df, sequence_length)
+    df_matched, n_riws = match_sequence_length(df, sequence_length)
 
     # Check if nan in df
-    if df.isnull().values.any():
+    if df_matched.isnull().values.any():
         print("DataFrame contains NaN values")
         raise ValueError("DataFrame contains NaN values")
 
     # Normalize the prices
-    prices_df = normalize_prices(df)
+    prices_df = normalize_prices(df_matched)
     result.update({feature: prices_df[feature].values for feature in prices_df.columns})
 
     # Normalize the limit order book volume
-    lob_volume_df = normalize_lob_volume(df)
+    lob_volume_df = normalize_lob_volume(df_matched)
     result.update({feature: lob_volume_df[feature].values for feature in lob_volume_df.columns})
 
     # Normalize the volume
-    volume_df = normalize_volume(df)
+    volume_df = normalize_volume(df_matched)
     result['quantity'] = volume_df.values
 
     # Check if any nan values are present
@@ -492,7 +464,7 @@ def compute_returns(df: pd.DataFrame) -> float:
 
     return current_return
 
-def match_sequence_length(df: pd.DataFrame, sequence_length: int) -> pd.DataFrame:
+def match_sequence_length(df: pd.DataFrame, sequence_length: int) -> tuple[pd.DataFrame, int]:
     """
     Match the sequence length of the dataframe to the given sequence length. This is done by combining the first
     few rows of the dataframe to match the sequence length. This is done to avoid losing data when the
@@ -510,16 +482,18 @@ def match_sequence_length(df: pd.DataFrame, sequence_length: int) -> pd.DataFram
     # We only need the trade-related rows
     df = df.iloc[1:-1].copy()
 
+    n_rows = df.shape[0]
+
     # Additional check
-    if df.shape[0] < sequence_length:
+    if n_rows < sequence_length:
         raise ValueError(f"DataFrame has less than {sequence_length} rows which has {len(df)} rows")
 
     # No point in combining if the sequence length already matches
-    if df.shape[1] == sequence_length:
-        return df
+    if n_rows == sequence_length:
+        return df, sequence_length
 
     # Combine the first few rows to match the sequence length
-    rows_to_combine = df.shape[0] - sequence_length + 1
+    rows_to_combine = n_rows - sequence_length + 1
     combined_rows = combine_rows(df.iloc[:rows_to_combine])
 
     # Remove all the rows
@@ -528,7 +502,7 @@ def match_sequence_length(df: pd.DataFrame, sequence_length: int) -> pd.DataFram
     # Add the combined row to the beginning of the dataframe
     df = pd.concat([combined_rows, df], ignore_index=True)
 
-    return df
+    return df, n_rows
 
 def combine_rows(rows: pd.DataFrame) -> pd.DataFrame:
     """
@@ -569,9 +543,10 @@ def normalize_prices(df: pd.DataFrame) -> pd.DataFrame:
     -------
     Normalized prices
     """
-    vwap_prices = df['vwap']
-    vwap_min = vwap_prices.min()
-    vwap_max = vwap_prices.max()
+    # Compute daily VWAP
+    price_weighted = df['vwap'] * df['quantity']
+    total_volume = df['quantity'].sum()
+    vwap = price_weighted.sum() / total_volume
 
     # Columns to be normalized
     trade_columns = ['close', 'open', 'high', 'low', 'vwap']
@@ -581,7 +556,7 @@ def normalize_prices(df: pd.DataFrame) -> pd.DataFrame:
 
     # Normalize the columns
     for column in columns:
-        df[column] = (df[column] - vwap_min) / (vwap_max - vwap_min)
+        df[column] = df[column] / vwap - 1
 
     return df
 
@@ -610,12 +585,12 @@ def normalize_lob_volume(df: pd.DataFrame) -> pd.DataFrame:
     # Normalization is based on the total volume of the bid and ask side
     total_volume = df.sum(axis=1)
 
-    # Replace total volume with 1 to avoid division by zero
-    total_volume[total_volume == 0] = 1
+    # Get the mean
+    mean_volume = total_volume.mean()
 
     # Normalize the columns
     for column in columns:
-        df[column] = df[column] / total_volume
+        df[column] = df[column] / mean_volume - 1
 
     return df
 
@@ -637,11 +612,11 @@ def normalize_volume(df: pd.DataFrame) -> pd.DataFrame:
     column = 'quantity'
     df = df[column].copy()
 
-    # Total volume
+    # Compute the mean
     total_volume = df.sum()
 
     # Compute relative volume
-    df = df / total_volume
+    df = df / total_volume - 1
 
     return df
 
