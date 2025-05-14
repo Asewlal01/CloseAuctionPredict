@@ -106,14 +106,14 @@ def train(model: BaseModel, train_data: list[DatasetTuple], sequence_size: int,
     # Initialize the loss function, optimizer and dataloaders
     loss = BCEWithLogitsLoss(reduction='none')
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-    dataloaders = create_loader(train_data, sequence_size, batch_size)
-    n_days = len(dataloaders)
+    loaders = create_loader(train_data, sequence_size, batch_size)
 
     model.train()
     for epoch in range(epochs):
         total_loss = 0
-        for loader in dataloaders:
+        for loader in loaders:
             for x, y, weights in loader:
+                # Moving everything to the device
                 x = x.to(model.device)
                 y = y.to(model.device)
                 weights = weights.to(model.device)
@@ -134,7 +134,7 @@ def train(model: BaseModel, train_data: list[DatasetTuple], sequence_size: int,
                 optimizer.step()
 
         if verbose:
-            average_loss = total_loss / n_days
+            average_loss = total_loss
             print(f"Epoch {epoch+1}/{epochs} has average Loss of : {average_loss:.4f}")
 
 def evaluate(model: BaseModel, data: list[DatasetTuple], sequence_size: int, batch_size: int) -> tuple[float, float, float]:
@@ -157,7 +157,6 @@ def evaluate(model: BaseModel, data: list[DatasetTuple], sequence_size: int, bat
     profit_calculator = ProfitCalculator()
     loss_fn = BCEWithLogitsLoss(reduction='none')
     dataloaders = create_loader(data, sequence_size, batch_size)
-    n_days = len(dataloaders)
     model.eval()
 
     with torch.no_grad():
@@ -191,9 +190,6 @@ def evaluate(model: BaseModel, data: list[DatasetTuple], sequence_size: int, bat
         # Sample based
         average_profit /= total_samples
         average_accuracy /= total_samples
-
-        # Day based since already normalized to 1 per day
-        average_loss /= n_days
 
         return average_profit, average_accuracy, average_loss
 
@@ -256,4 +252,4 @@ def compute_total_return(dataset):
     -------
     Total return for the given dataset.
     """
-    return sum(y.sum() for _, y in dataset)
+    return sum(y.abs().sum() for _, y in dataset)
