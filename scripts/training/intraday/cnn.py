@@ -4,23 +4,10 @@ import os
 from Modeling.WalkForwardTester import WalkForwardTester
 import torch
 
-def run_training():
+def get_model():
     """
-    Run the training of the model.
+    Get the model to be used for training.
     """
-    # Path to data
-    path_to_data = 'data/intraday'
-
-    # Save path of results
-    results = 'results/intraday_params/cnn'
-
-    # Create the directory if it does not exist
-    os.makedirs(results, exist_ok=True)
-
-    # Create the dataset manager
-    train_manager = BaseDatasetManager(path_to_data, 3)
-    train_manager.setup_dataset('2021-10')
-
     # Create the model
     model = LobConvolve(
         sequence_size=64,
@@ -30,11 +17,29 @@ def run_training():
         dropout=0.4,
     )
     model.to('cuda')
-    epochs = 30
-    lr = 1e-3
+
+    return model
+
+def run_training(model, epochs, lr, sequence_size, name):
+    """
+    Run the training of the model.
+    """
+    # Path to data
+    path_to_data = 'data/intraday'
+
+    # Save path of results
+    results = f'results/intraday_params/{name}'
+
+    # Create the directory if it does not exist
+    os.makedirs(results, exist_ok=True)
+
+    # Create the dataset manager
+    train_manager = BaseDatasetManager(path_to_data, 3)
+    train_manager.setup_dataset('2021-10')
+
 
     # Create tester
-    tester = WalkForwardTester(model, train_manager, train_manager, sequence_size=64)
+    tester = WalkForwardTester(model, train_manager, train_manager, sequence_size=sequence_size)
 
     MONTHS_TO_LOOP = 12
     for i in range(MONTHS_TO_LOOP):
@@ -51,5 +56,10 @@ def run_training():
             model.reset_parameters()
 
 if __name__ == '__main__':
-    run_training()
+    model = get_model()
+    sequence_size = 64
+    epochs = 30
+    lr = 1e-3
+    name = 'cnn'
+    run_training(model, epochs, lr, sequence_size, name)
 
