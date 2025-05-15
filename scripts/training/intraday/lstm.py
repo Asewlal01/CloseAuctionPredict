@@ -1,4 +1,4 @@
-from scripts.training.intraday.cnn import run_training
+from cnn import run_training
 from Models.ReccurentModels.LobLSTM import LobLSTM
 
 def get_model():
@@ -18,4 +18,3 @@ if __name__ == '__main__':
     lr = 1e-3
     name = 'lstm'
     run_training(model, epochs, lr, sequence_size, name)
-
