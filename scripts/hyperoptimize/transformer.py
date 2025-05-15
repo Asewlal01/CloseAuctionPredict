@@ -5,20 +5,20 @@ import os
 
 def model_parameters(trial, sequence_size):
 
-    # Embedding size is multiple of 32
-    embedding_size_multiple = trial.suggest_int('embedding_size_multiple', 1, 10)
-    embedding_size = 32 * embedding_size_multiple
+    # Embedding size is multiple of 16
+    embedding_size_multiple = trial.suggest_int('embedding_size_multiple', 1, 4)
+    embedding_size = 16 * embedding_size_multiple
 
     # Number of heads is power of 2
-    num_heads_power = trial.suggest_int('num_heads_power', 1, 4)
+    num_heads_power = trial.suggest_int('num_heads_power', 0, 2)
     num_heads = 2 ** num_heads_power
 
-    # Feed forward size is a multiple of the embedding size
-    dim_feedforward_multiple = trial.suggest_int('dim_feedforward_multiple', 8, 64)
+    # Feed forward size is a multiple of 16
+    dim_feedforward_multiple = trial.suggest_int('dim_feedforward_multiple', 4, 8)
     dim_feedforward = dim_feedforward_multiple * embedding_size
 
-    # Number of layers is a multiple of 2
-    num_layers_multiple = trial.suggest_int('num_layers_multiple', 1, 4)
+    # Number of layers is a multiple of 1
+    num_layers_multiple = trial.suggest_int('num_layers_multiple', 1, 2)
     num_layers = 2 * num_layers_multiple
 
     # Number of layers
