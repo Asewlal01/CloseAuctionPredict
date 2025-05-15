@@ -1,42 +1,48 @@
-from Models.ConvolutionalModels.LobConvolve import LobConvolve
+from Models.TransformerModels.LobTransformer import LobTransformer
 from Modeling.HyperOptimizer import HyperOptimizer
 from Modeling.DatasetManagers.BaseDatasetManager import BaseDatasetManager
 import os
 
 def model_parameters(trial, sequence_size):
+
+    # Embedding size is multiple of 32
+    embedding_size_multiple = trial.suggest_int('embedding_size_multiple', 1, 10)
+    embedding_size = 32 * embedding_size_multiple
+
+    # Number of heads is power of 2
+    num_heads_power = trial.suggest_int('num_heads_power', 1, 4)
+    num_heads = 2 ** num_heads_power
+
+    # Feed forward size is a multiple of the embedding size
+    dim_feedforward_multiple = trial.suggest_int('dim_feedforward_multiple', 8, 64)
+    dim_feedforward = dim_feedforward_multiple * embedding_size
+
+    # Number of layers is a multiple of 2
+    num_layers_multiple = trial.suggest_int('num_layers_multiple', 1, 4)
+    num_layers = 2 * num_layers_multiple
+
     # Number of layers
-    n_conv_layers = trial.suggest_int('n_conv_layers', 1, 5)
     n_fc_layers = trial.suggest_int('n_fc_layers', 1, 5)
-
-    # Convolutional layer parameters
-    conv_channels = []
-    kernel_sizes = []
-    for i in range(n_conv_layers):
-        # Every convolutional channel is a multiple of 8
-        conv_channels_multiple = trial.suggest_int(f'conv_channels_multiple_{i}', 4, 64)
-        conv_channels.append(conv_channels_multiple * 8)
-
-        # Kernel size is an uneven number with a minimum of 3 (2n + 1)
-        kernel_sizes_multiple = trial.suggest_int(f'kernel_sizes_multiple_{i}', 1, 4)
-        kernel_sizes.append(kernel_sizes_multiple * 2 + 1)
 
     # Fully connected layer parameters
     fc_neurons = []
     for i in range(n_fc_layers):
         # Every neuron in the layer is a multiple of 8
-        fc_neurons_multiple = trial.suggest_int(f'fc_neurons_multiple_{i}', 1, 64)
+        fc_neurons_multiple = trial.suggest_int(f'fc_neurons_multiple_{i}', 1, 8)
         fc_neurons.append(fc_neurons_multiple * 8)
 
     # Dropout rate are multiple of 0.1
     dropout_rate_multiple = trial.suggest_int('dropout_power', 0, 5)
     dropout_rate = dropout_rate_multiple * 0.1
 
-    model = LobConvolve(
+    model = LobTransformer(
         sequence_size=sequence_size,
-        conv_channels=conv_channels,
-        fc_neurons=fc_neurons,
-        kernel_size=kernel_sizes,
-        dropout=dropout_rate
+        embedding_size=embedding_size,
+        num_heads=num_heads,
+        dim_feedforward=dim_feedforward,
+        num_layers=num_layers,
+        fc_neurons = fc_neurons,
+        dropout = dropout_rate,
     )
     model.to('cuda')
 
@@ -65,7 +71,7 @@ def run_study():
 
     # Save path of results
     results = 'results/hyperparameters_intraday'
-    name = 'cnn'
+    name = 'transformer'
 
     # NUmber of evaluations
     trials = 100
@@ -81,5 +87,3 @@ def run_study():
 
 if __name__ == '__main__':
     run_study()
-
-
