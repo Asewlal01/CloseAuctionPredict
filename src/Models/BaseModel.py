@@ -85,7 +85,6 @@ class BaseModel(nn.Module):
         if self.output_dim == 0:
             raise AttributeError("The attribute `output_dim` is not defined in the model.")
 
-        self.output_dim = self.output_dim
         if self.fc_neurons is None:
             return
 
