@@ -1,7 +1,7 @@
-from Models.BaseModel import BaseModel
+from Models.ExogenousBaseModel import ExogenousBaseModel
 from Models.TransformerModels.BaseTransformer import BaseTransformer
 
-class ExogenousBaseTransformer(BaseTransformer, BaseModel):
+class ExogenousBaseTransformer(ExogenousBaseModel, BaseTransformer):
     def __init__(self, feature_size: int, sequence_size: int, embedding_size: int, num_heads: int, dropout: float,
                  dim_feedforward: int, num_layers: int, fc_neurons: list[int]):
         """
@@ -29,7 +29,7 @@ class ExogenousBaseTransformer(BaseTransformer, BaseModel):
         self.fc_neurons = fc_neurons
 
         expected_dim = 3
-        BaseModel.__init__(self, expected_dim)
+        ExogenousBaseModel.__init__(self, expected_dim)
 
     def build_model(self):
         BaseTransformer.build_model(self)
