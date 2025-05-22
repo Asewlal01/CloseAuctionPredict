@@ -62,9 +62,10 @@ def process_all_days(df: pd.DataFrame, lob_data: str) -> dict[datetime.date, pd.
     -------
     Dictionary with dates as keys and DataFrames as values. Each DataFrame contains the aggregated trade data for that date.
     """
-
     # Process the dataframe
     items = groups_to_process(df, lob_data)
+    if not items:
+        return {}
     with multiprocessing.Pool() as pool:
         processed_groups = pool.starmap(process_day, items)
 
@@ -86,6 +87,10 @@ def groups_to_process(df: pd.DataFrame, lob_data: str) -> list[tuple[pd.DataFram
     -------
 
     """
+
+    # Check if lob_data is a valid directory
+    if not os.path.isdir(lob_data):
+        return []
 
     groups = df.groupby(df['t'].dt.date)
     lob_dates = [date.split('.')[0] for date in os.listdir(lob_data) if date.endswith('.parquet')]
