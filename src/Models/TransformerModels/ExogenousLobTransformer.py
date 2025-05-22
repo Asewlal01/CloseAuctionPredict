@@ -1,6 +1,6 @@
 from Models.TransformerModels.ExogenousBaseTransformer import ExogenousBaseTransformer
 
-class LobTransformer(ExogenousBaseTransformer):
+class ExogenousLobTransformer(ExogenousBaseTransformer):
     """
     Transformer Network for predicting Stock Prices using Limit Order Book (LOB) data.
     """
