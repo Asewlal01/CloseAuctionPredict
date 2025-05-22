@@ -29,7 +29,7 @@ def run_training(model, epochs, lr, sequence_size, name):
     """
 
     # Save path of results
-    results = f'results/LOB/params/{name}'
+    results = f'results/TradeLOB/params/{name}'
 
     # Create the directory if it does not exist
     os.makedirs(results, exist_ok=True)
