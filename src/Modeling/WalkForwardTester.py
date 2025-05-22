@@ -167,7 +167,7 @@ def train(model: BaseModel, train_data: list[DatasetTuple | ExogenousDatasetTupl
 
         if maximise_validation:
             # use_trading is set to true because we have already removed from the dataset at the beginning
-            _, _, validation_loss = evaluate(model, validation_data, sequence_size, True, use_exogenous)
+            validation_loss = evaluate(model, validation_data, sequence_size, True, use_exogenous)
             if validation_loss < best_score:
                 best_score = validation_loss
                 best_model = model.state_dict()
@@ -223,7 +223,6 @@ def evaluate(model: BaseModel, data: list[DatasetTuple | ExogenousDatasetTuple],
     The metric value and accuracy.
     """
     # Setup
-    profit_calculator = ProfitCalculator()
     loss_fn = BCEWithLogitsLoss(reduction='none')
     model.eval()
 
@@ -234,10 +233,7 @@ def evaluate(model: BaseModel, data: list[DatasetTuple | ExogenousDatasetTuple],
     ]
 
     with torch.no_grad():
-        average_profit = 0
-        average_accuracy = 0
         average_loss = 0
-        total_samples = 0
         for item in data:
             # Unpacking the item
             if use_exogenous:
@@ -259,28 +255,18 @@ def evaluate(model: BaseModel, data: list[DatasetTuple | ExogenousDatasetTuple],
             # Forward pass
             y_pred = model(*input_vars)
 
-            profit = profit_calculator(y_pred, y)
-
-            # Accuracy checks if sign match
-            accuracy = (torch.sign(y_pred) == torch.sign(y)).float().sum()
-
             # Loss requires y to be binary
             y = convert_to_classification(y)
             loss = loss_fn(y_pred, y)
             loss = loss * weights
             loss = loss.sum()
 
-            average_profit += profit.item() * len(y)
-            average_accuracy += accuracy.item()
             average_loss += loss.item()
-            total_samples += len(y)
 
         # Sample based
-        average_profit /= total_samples
-        average_accuracy /= total_samples
         average_loss /= len(data)
 
-        return average_profit, average_accuracy, average_loss
+        return average_loss
 
 def compute_sample_weights(y, total_return):
     """
