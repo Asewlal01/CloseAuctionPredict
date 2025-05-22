@@ -1,8 +1,11 @@
 from Models.ConvolutionalModels.LobConvolve import LobConvolve
-from Modeling.DatasetManagers.BaseDatasetManager import BaseDatasetManager
+from Modeling.DatasetManagers.ClosingDatasetManager import ClosingDatasetManager
 import os
 from Modeling.WalkForwardTester import WalkForwardTester
 import torch
+from tqdm import tqdm
+
+PATH_TO_DATA = '/home/amish/Projects/CloseAuctionPredict/data/closing'
 
 def get_model():
     """
@@ -11,10 +14,10 @@ def get_model():
     # Create the model
     model = LobConvolve(
         sequence_size=120,
-        conv_channels=[256, 128],
+        conv_channels=[128, 64],
         fc_neurons=[128, 64],
         kernel_size=[3, 5],
-        dropout=0.2,
+        dropout=0.1,
     )
     model.to('cuda')
 
@@ -24,8 +27,6 @@ def run_training(model, epochs, lr, sequence_size, name):
     """
     Run the training of the model.
     """
-    # Path to data
-    path_to_data = 'data/lob'
 
     # Save path of results
     results = f'results/LOB/params/{name}'
@@ -34,15 +35,17 @@ def run_training(model, epochs, lr, sequence_size, name):
     os.makedirs(results, exist_ok=True)
 
     # Create the dataset manager
-    train_manager = BaseDatasetManager(path_to_data, 12)
+    print('Loading Data')
+    train_manager = ClosingDatasetManager(PATH_TO_DATA, 12)
     train_manager.setup_dataset('2021-1')
+    print('Loaded Data')
 
     # Create tester
-    tester = WalkForwardTester(model, train_manager, train_manager, sequence_size=sequence_size)
+    tester = WalkForwardTester(model, train_manager, train_manager, sequence_size=sequence_size, use_trading=False, use_exogenous=False)
 
     MONTHS_TO_LOOP = 12
-    for i in range(MONTHS_TO_LOOP):
-        tester.train(epochs, lr, 1, verbose=True)
+    for i in tqdm(range(MONTHS_TO_LOOP)):
+        tester.train(epochs, lr, False, True, 1/12)
         print(f'Training completed for month {i + 1} of {MONTHS_TO_LOOP}')
 
         # Save the model
@@ -58,7 +61,7 @@ if __name__ == '__main__':
     model = get_model()
     sequence_size = 120
     epochs = 100
-    lr = 1e-3
+    lr = 1e-4
     name = 'cnn'
     run_training(model, epochs, lr, sequence_size, name)
 

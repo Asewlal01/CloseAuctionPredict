@@ -1,6 +1,6 @@
 from Models.TransformerModels.LobTransformer import LobTransformer
 from Modeling.HyperOptimizer import HyperOptimizer
-from Modeling.DatasetManagers.BaseDatasetManager import BaseDatasetManager
+from Modeling.DatasetManagers.IntradayDatasetManager import IntradayDatasetManager
 import os
 
 def model_parameters(trial, sequence_size):
@@ -80,8 +80,8 @@ def run_study():
     os.makedirs(results, exist_ok=True)
 
     # Train the model
-    train_manager = BaseDatasetManager(path_to_data, 1)
-    test_manager = BaseDatasetManager(path_to_data, 1)
+    train_manager = IntradayDatasetManager(path_to_data, 1)
+    test_manager = IntradayDatasetManager(path_to_data, 1)
     optimizer = HyperOptimizer(train_manager, test_manager, '2021-1', 11)
     optimizer.optimize(objective, name, results, n_trials=trials)
 

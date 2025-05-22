@@ -1,20 +1,21 @@
-from Models.ConvolutionalModels.TradeLobConvolve import TradeLobConvolve
-from Modeling.DatasetManagers.BaseDatasetManager import BaseDatasetManager
+from Models.ConvolutionalModels.LobConvolve import LobConvolve
+from Modeling.DatasetManagers.IntradayDatasetManager import IntradayDatasetManager
 import os
 from Modeling.WalkForwardTester import WalkForwardTester
 import torch
+from tqdm import tqdm
 
 def get_model():
     """
     Get the model to be used for training.
     """
     # Create the model
-    model = TradeLobConvolve(
+    model = LobConvolve(
         sequence_size=120,
-        conv_channels=[256, 128],
+        conv_channels=[128, 64],
         fc_neurons=[128, 64],
         kernel_size=[3, 5],
-        dropout=0.2,
+        dropout=0.1,
     )
     model.to('cuda')
 
@@ -25,24 +26,26 @@ def run_training(model, epochs, lr, sequence_size, name):
     Run the training of the model.
     """
     # Path to data
-    path_to_data = 'data/trade_lob'
+    path_to_data = '/media/amish/b3fecb70-cb7d-4935-b49d-44c9b223f92c/closeauctionpredict_data/dataset/intraday'
 
     # Save path of results
-    results = f'results/TradeLOB/params/{name}'
+    results = f'results/intraday/params/{name}'
 
     # Create the directory if it does not exist
     os.makedirs(results, exist_ok=True)
 
     # Create the dataset manager
-    train_manager = BaseDatasetManager(path_to_data, 12)
-    train_manager.setup_dataset('2021-1')
+    print('Loading Data')
+    train_manager = IntradayDatasetManager(path_to_data, 4)
+    train_manager.setup_dataset('2021-9')
+    print('Data Loaded')
 
     # Create tester
     tester = WalkForwardTester(model, train_manager, train_manager, sequence_size=sequence_size)
 
     MONTHS_TO_LOOP = 12
-    for i in range(MONTHS_TO_LOOP):
-        tester.train(epochs, lr, 1, verbose=True)
+    for i in tqdm(range(MONTHS_TO_LOOP)):
+        tester.train(epochs, lr, False, True, 0.1)
         print(f'Training completed for month {i + 1} of {MONTHS_TO_LOOP}')
 
         # Save the model
@@ -58,7 +61,7 @@ if __name__ == '__main__':
     model = get_model()
     sequence_size = 120
     epochs = 100
-    lr = 1e-3
+    lr = 1e-4
     name = 'cnn'
     run_training(model, epochs, lr, sequence_size, name)
 
