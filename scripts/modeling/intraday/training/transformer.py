@@ -15,7 +15,7 @@ def get_model(sequence_size):
     return model
 
 if __name__ == '__main__':
-    sequence_size = 240
+    sequence_size = 120
     model = get_model(sequence_size)
     epochs = 100
     lr = 1e-4
