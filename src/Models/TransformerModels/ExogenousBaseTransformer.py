@@ -32,4 +32,4 @@ class ExogenousBaseTransformer(BaseTransformer, BaseModel):
         BaseModel.__init__(self, expected_dim)
 
     def build_model(self):
-        BaseModel.build_model(self)
+        BaseTransformer.build_model(self)
