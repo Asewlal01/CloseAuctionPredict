@@ -6,7 +6,6 @@ import multiprocessing
 import torch
 from tqdm import tqdm
 from DataProcessing.DatasetAssemblers.IntradayDatasetAssembler import get_files_to_process
-from DataProcessing.DatasetAssemblers.LobDatasetAssembler import (get_idx_and_day, get_auction_data)
 from datetime import datetime
 
 class ClosingDatasetAssembler:
