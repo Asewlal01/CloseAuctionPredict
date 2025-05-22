@@ -53,7 +53,7 @@ class WalkForwardTester:
               epochs, learning_rate, verbose,
               maximise_validation, validation_size)
 
-    def evaluate_on_train(self) -> tuple[float, float, float]:
+    def evaluate_on_train(self) -> float:
         """
         Evaluate the model on the training data. It uses the training data to evaluate the model. The model returns
         three values: the profit, the accuracy and the loss.
@@ -69,7 +69,7 @@ class WalkForwardTester:
 
         return evaluation
 
-    def evaluate_on_test(self) -> tuple[float, float, float]:
+    def evaluate_on_test(self) -> float:
         """
         Evaluate the model on the next given month. It uses the test data to evaluate the model.
 
@@ -85,9 +85,10 @@ class WalkForwardTester:
         return evaluation
 
 
-def train(model: BaseModel, train_data: list[DatasetTuple | ExogenousDatasetTuple], sequence_size: int,
-          use_trading: bool, use_exogenous: bool,
-          epochs: int, learning_rate: float, verbose, maximise_validation: bool, validation_size: float) -> None:
+def train(model: BaseModel, train_data: list[DatasetTuple | ExogenousDatasetTuple],
+          sequence_size: int, use_trading: bool, use_exogenous: bool,
+          epochs: int, learning_rate: float, verbose: bool,
+          maximise_validation: bool, validation_size: float) -> None:
     """
     Train the model using the given training data. It uses the BCEWithLogitsLoss function to compute the loss and
     Adam optimizer to optimize the model. The model is trained for the given number of epochs. This training scheme
@@ -99,6 +100,8 @@ def train(model: BaseModel, train_data: list[DatasetTuple | ExogenousDatasetTupl
     model : The model to be trained.
     train_data : The training data to be used for training the model.
     sequence_size : The size of the sequence to be used.
+    use_trading : Whether to use trading data.
+    use_exogenous : Whether to use exogenous data.
     epochs : Number of epochs to train the model.
     learning_rate : Learning rate to be used for training the model.
     verbose : Whether to print training information.
@@ -205,7 +208,7 @@ def process_sequence(x: torch.Tensor, y: torch.Tensor, z: torch.Tensor=None, *,
     return (x, y, z) if use_exogenous else (x, y)
 
 def evaluate(model: BaseModel, data: list[DatasetTuple | ExogenousDatasetTuple], sequence_size: int,
-             use_trading: bool, use_exogenous: bool) -> tuple[float, float, float]:
+             use_trading: bool, use_exogenous: bool) -> float:
     """
     Evaluate the model using the given dataset and metric. It also computes the accuracy of the model by comparing
     the sign of the predicted and actual values.
