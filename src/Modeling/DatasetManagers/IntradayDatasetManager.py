@@ -7,7 +7,7 @@ date_type = list[int]
 
 DatasetTuple = Tuple[torch.Tensor, torch.Tensor]
 
-class BaseDatasetManager:
+class IntradayDatasetManager:
     def __init__(self, dataset_path: str, num_months: int):
         """
         Initialize the dataset manager.
@@ -43,13 +43,24 @@ class BaseDatasetManager:
         # Generate all the months to loop over
         months = generate_dates(self.start, self.end)
         month_paths = [generate_month_path(self.dataset_path, month) for month in months]
-        self.dataset = [load_data(month_path) for month_path in month_paths]
+        self.load_dataset(month_paths)
+
+    def load_dataset(self, month_paths: list[str]):
+        """
+        Load the dataset from the specified directory.
+        """
+        if len(month_paths) == 0:
+            raise ValueError('No month paths provided.')
+
+        # Load data for each month
+        for month_path in month_paths:
+            data = load_data(month_path)
+            self.dataset.append(data)
 
     def increment_dataset(self):
         """
         Increment the dataset by adding one month.
         """
-
         # Remove the first month from the dataset
         del self.dataset[0]
 
@@ -70,10 +81,10 @@ class BaseDatasetManager:
 
         # Load data of the last month
         month_path = generate_month_path(self.dataset_path, self.end)
-        self.dataset.append(load_data(month_path))
+        self.load_dataset([month_path])
 
     def get_dataset(self) -> list[DatasetTuple]:
-        """r
+        """
         Returns all the datasets concatenated to one list. Each element represents one day worth of data.
 
         Returns
@@ -137,7 +148,7 @@ def load_data(month_path: str) -> list[DatasetTuple]:
         X = torch.load(path_X, weights_only=False)
         y = torch.load(path_y, weights_only=False)
 
-        # Make sure y is two dimensional
+        # Make sure y is two-dimensional
         if len(y.shape) == 1:
             y = y.unsqueeze(1)
 

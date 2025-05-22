@@ -1,5 +1,5 @@
 import os
-from Modeling.DatasetManagers.BaseDatasetManager import generate_dates, date_type
+from Modeling.DatasetManagers.IntradayDatasetManager import generate_dates, date_type
 import pandas as pd
 import numpy as np
 import multiprocessing
@@ -193,6 +193,50 @@ def construct_features(df: pd.DataFrame, horizon: int, sequence_size: int, sampl
 
     return x
 
+def construct_labels(df: pd.DataFrame, horizon: int, sequence_size: int, samples_to_keep: int) -> np.ndarray:
+    """
+    Construct the labels for the given stock.
+
+    Parameters
+    ----------
+    df : DataFrame containing the data.
+    horizon : Number of points in the future to use for the target variable.
+    sequence_size : Size of the input sequence.
+    samples_to_keep : Number of samples to keep for each date.
+
+    Returns
+    -------
+    y : Labels for the given stock.
+    """
+    # Cannot be processed
+    if df.empty or df.shape[0] < sequence_size:
+        return np.array([])
+
+    # The mid-price is the average of the bid and ask prices
+    mid_price = (df['ba1'] + df['bb1']) / 2
+
+    # Y is average mid point price change using horizon points in the past and horizon points in the future
+    averages = mid_price.rolling(window=horizon).mean()
+    average_future = averages.shift(-horizon)
+
+    # Compute the change
+    y = np.log(average_future / averages)
+
+    # The first few rows cannot be used due to sequence size window
+    y = y[sequence_size-1:]
+    # And last few rows are NaN because of future window being out of bounds
+    y = y[:-horizon]
+
+    if y.shape[0] > samples_to_keep:
+        y = y[-samples_to_keep:]
+
+    y = y.astype(np.float32)
+    if np.isnan(y).any():
+        print("NaN values found in y")
+        return np.array([])
+
+    return y
+
 def normalize_features(x: np.ndarray) -> np.ndarray:
     """
     Normalize the features using min-max normalization. It uses the lowest bid and highest ask prices to normalize the
@@ -214,25 +258,27 @@ def normalize_features(x: np.ndarray) -> np.ndarray:
 
     return x
 
-
 def normalize_prices(x: np.ndarray) -> np.ndarray:
     """
     Normalize the price features using min-max normalization. It uses the lowest bid and highest ask prices to
-    normalize the price features.
+    as the min-max range.
+
     Parameters
     ----------
-    x
+    x : Input features to be normalized.
 
     Returns
     -------
-
+    Normalized features.
     """
     # Price columns are even columns
     price_columns = np.arange(0, 20, 2)
+    bid_columns = price_columns[:5]
+    ask_columns = price_columns[5:]
 
     # Min-Max is based on highest ask and lowest bid
-    lowest_bid_price = x[:, :, price_columns[4]]
-    highest_ask_price = x[:, :, price_columns[9]]
+    lowest_bid_price = x[:, :, bid_columns[-1]]
+    highest_ask_price = x[:, :, ask_columns[-1]]
 
     # Find the max and min values
     min_price = lowest_bid_price.min(axis=1, keepdims=True)
@@ -270,48 +316,6 @@ def normalize_volumes(x: np.ndarray) -> np.ndarray:
     x[:, :, volume_columns] = (x[:, :, volume_columns] - min_volume) / (max_volume - min_volume)
 
     return x
-
-def construct_labels(df: pd.DataFrame, horizon: int, sequence_size: int, samples_to_keep: int) -> np.ndarray:
-    """
-    Construct the labels for the given stock.
-
-    Parameters
-    ----------
-    df : DataFrame containing the data.
-    horizon : Number of points in the future to use for the target variable.
-    sequence_size : Size of the input sequence.
-
-    Returns
-    -------
-    y : Labels for the given stock.
-    """
-    if df.empty or df.shape[0] < sequence_size:
-        # print(f"File {df} is empty or has less than {sequence_size} rows.")
-        return np.array([])
-
-    # The mid price is the average of the bid and ask prices
-    mid_price = (df['ba1'] + df['bb1']) / 2
-
-    # Y is average mid point price change using horizon points in the past and horizon points in the future
-    averages = mid_price.rolling(window=horizon).mean()
-    average_future = averages.shift(-horizon)
-
-    # Compute the change
-    y = average_future / averages - 1
-
-    # The first few rows cannot be used due to sequence size window
-    # And last few rows are NaN because of future window being out of bounds
-    y = y[sequence_size-1:-horizon]
-
-    if y.shape[0] > samples_to_keep:
-        y = y[-samples_to_keep:]
-
-    y = y.astype(np.float32)
-    if np.isnan(y).any():
-        print("NaN values found in y")
-        return np.array([])
-
-    return y
 
 def filter_outliers(x, y):
     # Some results will have values that are greater than 1 or less than 0, which should be impossible
