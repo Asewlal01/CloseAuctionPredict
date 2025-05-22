@@ -1,8 +1,8 @@
-from Models.LinearRegression.BaseLinear import BaseLinear
+from Models.LinearRegression.ExogenousBaseLinear import ExogenousBaseLinear
 
-class TradeLinear(BaseLinear):
+class ExogenousLobLinear(ExogenousBaseLinear):
     """
-    Logistic Regression model for predicting the direction of the stock price.
+    Logistic Regression model for predicting Stock Prices using Limit Order Book data.
     """
     def __init__(self, sequence_size: int):
         """
@@ -12,6 +12,5 @@ class TradeLinear(BaseLinear):
         ----------
         sequence_size : Number of time steps in the input data
         """
-        # Trade data has 5 features: Open, High, Low, Close, Volume, VWAP
-        feature_size = 6
+        feature_size = 20
         super().__init__(feature_size, sequence_size)

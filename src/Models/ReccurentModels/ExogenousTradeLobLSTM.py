@@ -1,6 +1,6 @@
-from Models.ReccurentModels.BaseLSTM import BaseLSTM
+from Models.ReccurentModels.ExogenousBaseLSTM import ExogenousBaseLSTM
 
-class TradeLobLSTM(BaseLSTM):
+class ExogenousTradeLobLSTM(ExogenousBaseLSTM):
     """
     LSTM Neural Network for predicting the Closing Price of a stock using Limit Order Book (LOB) data.
     """

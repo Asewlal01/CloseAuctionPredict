@@ -1,9 +1,10 @@
-from Models.ConvolutionalModels.BaseConvolve import BaseConvolve
+from Models.ConvolutionalModels.ExogenousBaseConvolve import ExogenousBaseConvolve
 
-class TradeConvolve(BaseConvolve):
+class ExogenousTradeLobConvolve(ExogenousBaseConvolve):
     """
-    Convolutional Neural Network for predicting Stock Price using Trade data. This model assumes
-    that the trade data has OHLCV (Open, High, Low, Close, Volume) and VWAP (Volume Weighted Average Price) features.
+    Convolutional Neural Network for predicting the Stock prices using Trade and Limit Order Book data. This model
+    can be seen as a combination of the LOBConvolve and TradeConvolve models. It uses the same features as the two
+    models, leading to a total of 26 features.
     """
     def __init__(self, sequence_size: int, conv_channels: list[int], fc_neurons: list[int],
                  kernel_size: list[int], stride: int=1, padding: int=0, dilation: int=1, dropout: float=0):
@@ -23,6 +24,6 @@ class TradeConvolve(BaseConvolve):
         dropout : Dropout rate to use in the fully connected
         """
 
-        feature_size = 6
+        feature_size = 26
         super().__init__(feature_size, sequence_size, conv_channels, fc_neurons,
                                             kernel_size, stride, padding, dilation, dropout)
