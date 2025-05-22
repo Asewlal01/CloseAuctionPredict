@@ -1,15 +1,14 @@
 import torch
 from torch.nn import BCEWithLogitsLoss
-from torch.utils.data import DataLoader
-
 from Models.BaseModel import BaseModel
-from Modeling.DatasetManagers.BaseDatasetManager import BaseDatasetManager, convert_to_classification, DatasetTuple
+from Modeling.DatasetManagers.IntradayDatasetManager import IntradayDatasetManager, convert_to_classification, DatasetTuple
+from Modeling.DatasetManagers.ClosingDatasetManager import ExogenousDatasetTuple
 from Metrics.ProfitCalculator import ProfitCalculator
 
 
 class WalkForwardTester:
-    def  __init__(self, model: BaseModel, train_manager: BaseDatasetManager, test_manager: BaseDatasetManager,
-                  sequence_size: int = 360):
+    def  __init__(self, model: BaseModel, train_manager: IntradayDatasetManager, test_manager: IntradayDatasetManager,
+                  sequence_size: int = 360, use_trading: bool = False, use_exogenous: bool = False) -> None:
         """
         Initializes the WalkForwardTester class.
 
@@ -18,14 +17,22 @@ class WalkForwardTester:
         model : Model to be tested
         train_manager : DatasetManager to be used for training
         test_manager : DatasetManager to be used for testing
+        sequence_size : Size of the sequence to be used
+        use_trading : Whether to use trading data
+        use_exogenous : Whether to use exogenous data
         """
         self.model = model
         self.train_manager = train_manager
         self.test_manager = test_manager
-        self.sequence_size = sequence_size
+
         self.metric = ProfitCalculator()
 
-    def train(self, epochs, learning_rate, batch_size, verbose=False) -> None:
+        self.sequence_size = sequence_size
+        self.use_trading = use_trading
+        self.use_exogenous = use_exogenous
+
+    def train(self, epochs, learning_rate, verbose=False, maximise_validation: bool=False,
+              validation_size: float = 0.25) -> None:
         """
         Trains the model using walk forward testing. It trains the model on the training data and validates it on the
         validation data.
@@ -34,23 +41,22 @@ class WalkForwardTester:
         ----------
         epochs : Number of epochs to train the model.
         learning_rate : Learning rate to be used for training.
-        batch_size : Size of the batch to be used for training the model.
         verbose : Whether to print training information.
+        maximise_validation : Whether to use parameters where the validation metric is maximised.
+        validation_size : Size of the validation set to be used for training.
         """
         # Get the training and validation data
         train_data = self.train_manager.get_dataset()
 
         # Train the model
-        train(self.model, train_data, self.sequence_size, epochs, learning_rate, batch_size, verbose)
+        train(self.model, train_data, self.sequence_size, self.use_trading, self.use_exogenous,
+              epochs, learning_rate, verbose,
+              maximise_validation, validation_size)
 
-    def evaluate_on_train(self, batch_size: int=1024) -> tuple[float, float, float]:
+    def evaluate_on_train(self) -> tuple[float, float, float]:
         """
         Evaluate the model on the training data. It uses the training data to evaluate the model. The model returns
         three values: the profit, the accuracy and the loss.
-
-        Parameters
-        ----------
-        batch_size: Size of the batch to be used for evaluation.
 
         Returns
         -------
@@ -59,17 +65,13 @@ class WalkForwardTester:
         # Get the training and validation data
         train_data = self.train_manager.get_dataset()
 
-        evaluation = evaluate(self.model, train_data, self.sequence_size, batch_size)
+        evaluation = evaluate(self.model, train_data, self.sequence_size, self.use_trading, self.use_exogenous)
 
         return evaluation
 
-    def evaluate_on_test(self, batch_size: int=1024) -> tuple[float, float, float]:
+    def evaluate_on_test(self) -> tuple[float, float, float]:
         """
         Evaluate the model on the next given month. It uses the test data to evaluate the model.
-
-        Parameters
-        ----------
-        batch_size: Size of the batch to be used for evaluation.
 
         Returns
         -------
@@ -78,14 +80,14 @@ class WalkForwardTester:
         # Get the training, validation and test data
         test_data = self.test_manager.get_dataset()
 
-        evaluation = evaluate(self.model, test_data, self.sequence_size, batch_size)
+        evaluation = evaluate(self.model, test_data, self.sequence_size, self.use_trading, self.use_exogenous)
 
         return evaluation
 
 
-def train(model: BaseModel, train_data: list[DatasetTuple], sequence_size: int,
-          epochs: int, learning_rate: float,
-          batch_size: int = 32, verbose=True) -> None:
+def train(model: BaseModel, train_data: list[DatasetTuple | ExogenousDatasetTuple], sequence_size: int,
+          use_trading: bool, use_exogenous: bool,
+          epochs: int, learning_rate: float, verbose, maximise_validation: bool, validation_size: float) -> None:
     """
     Train the model using the given training data. It uses the BCEWithLogitsLoss function to compute the loss and
     Adam optimizer to optimize the model. The model is trained for the given number of epochs. This training scheme
@@ -99,24 +101,48 @@ def train(model: BaseModel, train_data: list[DatasetTuple], sequence_size: int,
     sequence_size : The size of the sequence to be used.
     epochs : Number of epochs to train the model.
     learning_rate : Learning rate to be used for training the model.
-    batch_size : Size of the batch to be used for training the model.
     verbose : Whether to print training information.
+    maximise_validation : Whether to use parameters where the validation metric is maximised.
+    validation_size : Size of the validation set to be used for training.
     """
 
     # Initialize the loss function, optimizer and dataloaders
     loss = BCEWithLogitsLoss(reduction='none')
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-    total_return = compute_total_return(train_data)
+
+    train_data = [
+        process_sequence(*item, sequence_size=sequence_size, use_trading=use_trading, use_exogenous=use_exogenous)
+        for item in train_data
+    ]
+
+    # Create validation set
+    if maximise_validation:
+        validation_index = int(validation_size * len(train_data))
+        validation_data = train_data[-validation_index:]
+        train_data = train_data[:-validation_index]
+
+        # Saving best score and model
+        best_model = None
+        best_score = float('inf')
 
     model.train()
     for epoch in range(epochs):
         total_loss = 0
-        for x, y in train_data:
+        for item in train_data:
+            # Unpacking the item
+            if use_exogenous:
+                x, y, z = item
+                input_vars = [x, z]
+            else:
+                x, y = item
+                input_vars = [x,]
+
+            # Weights for each sample
+            total_return = y.abs().sum()
             weights = compute_sample_weights(y, total_return)
-            x = x[:, -sequence_size:, :]
 
             # Moving everything to the device
-            x = x.to(model.device)
+            input_vars = [var.to(model.device) for var in input_vars]
             y = y.to(model.device)
             weights = weights.to(model.device)
 
@@ -124,7 +150,7 @@ def train(model: BaseModel, train_data: list[DatasetTuple], sequence_size: int,
             y = convert_to_classification(y)
 
             # Forward pass
-            y_pred = model(x)
+            y_pred = model(*input_vars)
             loss_per_sample = loss(y_pred, y)
             weighted_loss = weights * loss_per_sample
             loss_value = weighted_loss.sum()
@@ -136,10 +162,50 @@ def train(model: BaseModel, train_data: list[DatasetTuple], sequence_size: int,
             optimizer.step()
 
         if verbose:
-            average_loss = total_loss
-            print(f"Epoch {epoch+1}/{epochs} has average Loss of : {average_loss:.4f}")
+            average_loss = total_loss / len(train_data)
+            print(f"Epoch {epoch+1}/{epochs} has training Loss of : {average_loss:.4f}")
 
-def evaluate(model: BaseModel, data: list[DatasetTuple], sequence_size: int, batch_size: int) -> tuple[float, float, float]:
+        if maximise_validation:
+            # use_trading is set to true because we have already removed from the dataset at the beginning
+            _, _, validation_loss = evaluate(model, validation_data, sequence_size, True, use_exogenous)
+            if validation_loss < best_score:
+                best_score = validation_loss
+                best_model = model.state_dict()
+
+            if verbose:
+                print(f"Epoch {epoch+1}/{epochs} has validation Loss of : {validation_loss:.4f} \n")
+
+            model.train()
+
+    # Update with best model
+    if maximise_validation:
+        model.load_state_dict(best_model)
+
+def process_sequence(x: torch.Tensor, y: torch.Tensor, z: torch.Tensor=None, *,
+                     sequence_size: int, use_trading: bool=False, use_exogenous: bool=False) -> DatasetTuple | ExogenousDatasetTuple:
+    """
+    Process the sequence of data. It removes the first sequence_size elements from the data. It also removes the
+    Parameters
+    ----------
+    x : Input data
+    y : Output data
+    z : Exogenous data
+    sequence_size : Size of the sequence to be used
+    use_trading : Whether to use trading data
+    use_exogenous : Whether to use exogenous data
+
+    Returns
+    -------
+    Processed sequence of data.
+    """
+    x = x[:, -sequence_size:, :]
+    if not use_trading:
+        x = x[:, :, :20]
+
+    return (x, y, z) if use_exogenous else (x, y)
+
+def evaluate(model: BaseModel, data: list[DatasetTuple | ExogenousDatasetTuple], sequence_size: int,
+             use_trading: bool, use_exogenous: bool) -> tuple[float, float, float]:
     """
     Evaluate the model using the given dataset and metric. It also computes the accuracy of the model by comparing
     the sign of the predicted and actual values.
@@ -149,7 +215,8 @@ def evaluate(model: BaseModel, data: list[DatasetTuple], sequence_size: int, bat
     model : The model to be evaluated.
     data : The dataset to be used for evaluation.
     sequence_size : The size of the sequence to be used.
-    batch_size : The size of the batch to be used for evaluation.
+    use_trading : Whether to use trading data.
+    use_exogenous : Whether to use exogenous data.
 
     Returns
     -------
@@ -158,27 +225,44 @@ def evaluate(model: BaseModel, data: list[DatasetTuple], sequence_size: int, bat
     # Setup
     profit_calculator = ProfitCalculator()
     loss_fn = BCEWithLogitsLoss(reduction='none')
-    total_return = compute_total_return(data)
     model.eval()
+
+    # Process the data
+    data = [
+        process_sequence(*item, sequence_size=sequence_size, use_trading=use_trading, use_exogenous=use_exogenous)
+        for item in data
+    ]
 
     with torch.no_grad():
         average_profit = 0
         average_accuracy = 0
         average_loss = 0
         total_samples = 0
-        for x, y in data:
-            weights = compute_sample_weights(y, total_return)
-            x = x[:, -sequence_size:, :]
+        for item in data:
+            # Unpacking the item
+            if use_exogenous:
+                x, y, z = item
+                input_vars = [x, z]
+            else:
+                x, y = item
+                input_vars = [x,]
 
-            x = x.to(model.device)
+            # Weights for each sample
+            total_return = y.abs().sum()
+            weights = compute_sample_weights(y, total_return)
+
+            # Moving everything to the device
+            input_vars = [var.to(model.device) for var in input_vars]
             y = y.to(model.device)
             weights = weights.to(model.device)
-            y_pred = model(x)
+
+            # Forward pass
+            y_pred = model(*input_vars)
 
             profit = profit_calculator(y_pred, y)
 
             # Accuracy checks if sign match
-            accuracy = ((y_pred * y) > 0).float().sum()
+            accuracy = (torch.sign(y_pred) == torch.sign(y)).float().sum()
 
             # Loss requires y to be binary
             y = convert_to_classification(y)
@@ -194,49 +278,17 @@ def evaluate(model: BaseModel, data: list[DatasetTuple], sequence_size: int, bat
         # Sample based
         average_profit /= total_samples
         average_accuracy /= total_samples
+        average_loss /= len(data)
 
         return average_profit, average_accuracy, average_loss
-
-def create_loader(dataset: list[DatasetTuple], sequence_size: int, batch_size: int) -> list[DataLoader]:
-    """
-    Create a DataLoader for the given dataset.
-
-    Parameters
-    ----------
-    dataset : The dataset to be used for creating the DataLoader.
-    sequence_size : The size of the sequence to be used
-    batch_size : The batch size to be used for creating the DataLoader.
-
-    Returns
-    -------
-    DataLoader for the given dataset.
-    """
-    dataloaders = []
-    total_return = compute_total_return(dataset)
-    for x, y in dataset:
-        # Only keep the last sequence_size samples
-        x = x[:, -sequence_size:, :]
-
-        # Compute the sample weights
-        weights = compute_sample_weights(y, total_return)
-
-        # Convert the dataset to a PyTorch Dataset
-        dataset = torch.utils.data.TensorDataset(x, y, weights)
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
-        dataloaders.append(dataloader)
-
-    return dataloaders
 
 def compute_sample_weights(y, total_return):
     """
     Compute the sample weights for the given dataset. The sample weights are used to balance the dataset. The samples
     are weighted based on the number of samples in each class. The weights are computed as the inverse of the
     """
-    # Compute log return from percentage change
-    log_returns = torch.log(y + 1)
-
     # Convert to absolute values
-    abs_return = torch.abs(log_returns)
+    abs_return = torch.abs(y)
 
     # Compute the sample weights
     sample_weights = abs_return / total_return
@@ -256,4 +308,7 @@ def compute_total_return(dataset):
     -------
     Total return for the given dataset.
     """
-    return sum(y.abs().sum() for _, y in dataset)
+    # Compute absolute returns
+    abs_returns = [returns.abs() for _, returns in dataset]
+
+    return sum(returns.sum() for returns in abs_returns)
