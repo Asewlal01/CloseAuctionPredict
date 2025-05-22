@@ -1,13 +1,13 @@
-from Models.TransformerModels.BaseTransformer import BaseTransformer
+from Models.TransformerModels.ExogenousBaseTransformer import ExogenousBaseTransformer
 
-class TradeTransformer(BaseTransformer):
+class LobTransformer(ExogenousBaseTransformer):
     """
-    Transformer Network for predicting the Closing Price of a stock using the Trade data.
+    Transformer Network for predicting Stock Prices using Limit Order Book (LOB) data.
     """
     def __init__(self, sequence_size: int, embedding_size: int, num_heads: int, dropout: float,
                  dim_feedforward: int, num_layers: int, fc_neurons: list[int]):
         """
-        Initializes the Transformer Network for predicting the Closing Price of a stock using the Trade data.
+        Initializes the Transformer Network for predicting the Closing Price of a stock using
 
         Parameters
         ----------
@@ -19,6 +19,6 @@ class TradeTransformer(BaseTransformer):
         num_layers : Number of sub-encoder-layers in the encoder
         fc_neurons : Neurons in each fully connected layer after the transformer
         """
-        feature_size = 6
+        feature_size = 20
         super().__init__(feature_size, sequence_size, embedding_size, num_heads, dropout,
                                               dim_feedforward, num_layers, fc_neurons)
