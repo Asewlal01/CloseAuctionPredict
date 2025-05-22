@@ -5,7 +5,7 @@ from Modeling.WalkForwardTester import WalkForwardTester
 import torch
 from tqdm import tqdm
 
-PATH_TO_DATA = '/home/amish/Projects/CloseAuctionPredict/data/closing'
+PATH_TO_DATA = 'data/closing'
 
 def get_model():
     """

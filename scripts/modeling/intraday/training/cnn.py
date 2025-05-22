@@ -26,7 +26,7 @@ def run_training(model, epochs, lr, sequence_size, name):
     Run the training of the model.
     """
     # Path to data
-    path_to_data = '/media/amish/b3fecb70-cb7d-4935-b49d-44c9b223f92c/closeauctionpredict_data/dataset/intraday'
+    path_to_data = 'data/intraday'
 
     # Save path of results
     results = f'results/intraday/params/{name}'
