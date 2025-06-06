@@ -11,7 +11,7 @@ class LimitOrderBookProcessor(BaseProcessor):
     This class processes limit order book data files. It inherits from the FileProcessor class and implements the
     process_file method.
     """
-    def __init__(self, file_path: str, max_price: int):
+    def __init__(self, file_path: str, max_price: int | float = 1e6):
         """
         Initialize the LimitOrderBookProcessor with the path to the file to be processed.
 
