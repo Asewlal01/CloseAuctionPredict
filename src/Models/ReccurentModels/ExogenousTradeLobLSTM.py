@@ -15,5 +15,5 @@ class ExogenousTradeLobLSTM(ExogenousBaseLSTM):
         lstm_size : Number of LSTM layers
         fc_neurons : Number of nodes in the fully connected layers. Can be a list of integers or a single integer.
         """
-        feature_size = 26
+        feature_size = 29
         super().__init__(feature_size,  hidden_size, lstm_size, fc_neurons, dropout)
