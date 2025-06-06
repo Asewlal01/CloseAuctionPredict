@@ -68,6 +68,13 @@ class BaseConvolve(BaseModel):
                 nn.ReLU()
             )
 
+            # Average Pooling Layer
+            self.layers.append(
+                nn.AvgPool1d(kernel_size=2, stride=1)
+            )
+            # Size reduction from pooling
+            output_size = (output_size - 2) // 1 + 1
+
             # Last output size is the number of channels
             in_channels = out_channels
 
