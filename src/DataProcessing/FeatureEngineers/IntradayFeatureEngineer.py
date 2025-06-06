@@ -1,4 +1,6 @@
 import os
+from typing import Any
+
 from Modeling.DatasetManagers.IntradayDatasetManager import generate_dates, date_type
 import pandas as pd
 import numpy as np
@@ -218,13 +220,13 @@ def construct_features(df: pd.DataFrame, horizon: int, sequence_size: int, sampl
         return np.array([])
 
     # Conversions of prices to returns and volumes to relative volumes
-    arr = convert_to_returns(arr)
-    arr = convert_to_relative_volumes(arr)
+    arr, mid_price = convert_to_returns(arr)
+    arr, total_volume = convert_to_relative_volumes(arr)
 
     # Adding mid-price changes and total-volume changes
-    mid_price_change = compute_mid_price_change(arr)
-    total_volume_change = compute_total_volume_change(arr)
-    changes = np.stack((mid_price_change, total_volume_change), axis=1) # Creates 2D array with two columns
+    mid_price_change = compute_mid_price_change(mid_price)
+    total_volume_change = compute_total_volume_change(total_volume)
+    changes = np.hstack((mid_price_change, total_volume_change)) # Creates 2D array with two columns
     arr = np.hstack((arr, changes)) # Concatenates the columns to the original array
 
     # Sliding window view to create sequences
@@ -243,7 +245,7 @@ def construct_features(df: pd.DataFrame, horizon: int, sequence_size: int, sampl
 
     return x
 
-def convert_to_returns(arr: np.array) -> np.ndarray:
+def convert_to_returns(arr: np.array) -> tuple[np.ndarray, np.ndarray]:
     """
     Convert prices in the given array to returns relative to the mid-price.
 
@@ -253,7 +255,7 @@ def convert_to_returns(arr: np.array) -> np.ndarray:
 
     Returns
     -------
-    Array with price returns computed.
+    Array with price returns computed and the mid-price.
     """
     # Get the mid-price
     mid_price = compute_mid_price(arr)
@@ -263,14 +265,14 @@ def convert_to_returns(arr: np.array) -> np.ndarray:
     prices = arr[:, lob_columns]
 
     # Convert prices to returns relative to the mid-price
-    returns = np.log(prices / mid_price[:, np.newaxis])
+    returns = np.log(prices / mid_price)
 
     # Replace the original prices with returns in the array
     arr[:, lob_columns] = returns
 
-    return arr
+    return arr, mid_price
 
-def compute_mid_price(x):
+def compute_mid_price(x) -> np.ndarray:
     """
     Compute the mid-price from the limit order book data.
 
@@ -284,9 +286,15 @@ def compute_mid_price(x):
     """
     best_bid = x[:, 0]  # Best bid price
     best_ask = x[:, 10]  # Best ask price
-    return (best_bid + best_ask) / 2.0
 
-def convert_to_relative_volumes(arr: np.ndarray) -> np.ndarray:
+    mid_price = (best_bid + best_ask) / 2.0
+
+    # Convert to 2d
+    mid_price = mid_price[:, np.newaxis]
+
+    return mid_price
+
+def convert_to_relative_volumes(arr: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """
     Convert volumes in the given array to relative volumes.
 
@@ -296,7 +304,7 @@ def convert_to_relative_volumes(arr: np.ndarray) -> np.ndarray:
 
     Returns
     -------
-    Array with relative volumes computed.
+    Array with relative volumes computed and the total volume.
     """
     # Get the volume columns
     volume_columns = np.arange(1, 20, 2)
@@ -305,9 +313,9 @@ def convert_to_relative_volumes(arr: np.ndarray) -> np.ndarray:
     total_volume = compute_total_volume(arr)
 
     # Convert volumes to relative volumes
-    arr[:, volume_columns] /= total_volume
+    arr[:, volume_columns] = arr[:, volume_columns] / total_volume
 
-    return arr
+    return arr, total_volume
 
 def compute_total_volume(arr: np.ndarray) -> np.ndarray:
     """
@@ -329,19 +337,18 @@ def compute_total_volume(arr: np.ndarray) -> np.ndarray:
 
     return total_volume
 
-def compute_mid_price_change(arr: np.ndarray) -> np.ndarray:
+def compute_mid_price_change(mid_price: np.ndarray) -> np.ndarray:
     """
     Compute the mid-price change from the limit order book data.
 
     Parameters
     ----------
-    arr : Input array
+    mid_price : Mid-price array
 
     Returns
     -------
     Mid-price change for each sample.
     """
-    mid_price = compute_mid_price(arr)
 
     # Compute the change in mid-price
     mid_price_change = np.zeros_like(mid_price)
@@ -349,19 +356,18 @@ def compute_mid_price_change(arr: np.ndarray) -> np.ndarray:
 
     return mid_price_change
 
-def compute_total_volume_change(arr: np.ndarray) -> np.ndarray:
+def compute_total_volume_change(total_volume) -> np.ndarray:
     """
     Compute the total volume change from the limit order book data.
 
     Parameters
     ----------
-    arr : Input array
+    total_volume: Total volume array
 
     Returns
     -------
     Total volume change for each sample.
     """
-    total_volume = compute_total_volume(arr)
 
     # Compute the change in total volume
     total_volume_change = np.zeros_like(total_volume)
