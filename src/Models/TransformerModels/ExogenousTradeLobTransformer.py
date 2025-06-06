@@ -19,6 +19,6 @@ class ExogenousTradeLobTransformer(ExogenousBaseTransformer):
         num_layers : Number of sub-encoder-layers in the encoder
         fc_neurons : Neurons in each fully connected layer after the transformer
         """
-        feature_size = 26
+        feature_size = 29
         super().__init__(feature_size, sequence_size, embedding_size, num_heads, dropout,
                                               dim_feedforward, num_layers, fc_neurons)
