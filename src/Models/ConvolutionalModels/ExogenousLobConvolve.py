@@ -24,6 +24,6 @@ class ExogenousLobConvolve(ExogenousBaseConvolve):
         dropout : Dropout rate to use in the fully connected
         """
 
-        feature_size = 20
+        feature_size = 22
         super().__init__(feature_size, sequence_size, conv_channels, fc_neurons,
                                             kernel_size, stride, padding, dilation, dropout)
