@@ -6,13 +6,15 @@ import multiprocessing
 import torch
 from tqdm import tqdm
 
-class IntradayDatasetAssembler:
+
+class IntradayFeatureEngineer:
     """
-    Assembles intraday datasets for analysis.
+    This class handles the assembly of the intraday features from the limit order book data. It also groups the data
+    for all stocks in the given month per day and saves the processed data in a specified directory.
     """
 
-    def __init__(self, lob_path: str, save_path: str, sequence_size: int=360, horizon: int=5,
-                 samples_to_keep: int=1) -> None:
+    def __init__(self, lob_path: str, save_path: str, sequence_size: int = 360, horizon: int = 5,
+                 samples_to_keep: int = 1) -> None:
         """
         Initialize the IntradayDatasetAssembler with the path to the limit order book data.
 
@@ -24,6 +26,7 @@ class IntradayDatasetAssembler:
         horizon : Size of future sequence used to determine the target.
         samples_to_keep : Number of samples to keep for each date.
         """
+
         self.lob_path = lob_path
         self.stocks = os.listdir(lob_path)
         self.save_path = save_path
@@ -40,12 +43,15 @@ class IntradayDatasetAssembler:
         start_date : Start date for the dataset as [year, month].
         end_date : End date for the dataset as [year, month].
         """
+
         # Generate all the months to loop over
         months = generate_dates(start_date, end_date)
 
         # Loop over all the months
         for month in tqdm(months):
-            process_month(month, self.lob_path, self.save_path, self.horizon, self.sequence_size, self.samples_to_keep)
+            process_month(month, self.lob_path, self.save_path,
+                          self.horizon, self.sequence_size, self.samples_to_keep)
+
 
 def process_month(month: date_type, lob_path: str, save_path: str, horizon: int, sequence_size: int,
                   samples_to_keep: int) -> None:
@@ -61,6 +67,7 @@ def process_month(month: date_type, lob_path: str, save_path: str, horizon: int,
     sequence_size : Size of the input sequence.
     samples_to_keep : Number of samples to keep
     """
+
     # Get all the files for the month
     files_to_process = get_files_to_process(month, lob_path)
     if not files_to_process:
@@ -72,7 +79,8 @@ def process_month(month: date_type, lob_path: str, save_path: str, horizon: int,
     for date, files in files_to_process.items():
         process_day(date, files, month_save_path, horizon, sequence_size, samples_to_keep)
 
-def get_files_to_process(month: date_type, lob_path: str) -> dict[str, list[str]]:
+
+def get_files_to_process(month: date_type, lob_path: str, stocks_to_consider: list=None) -> dict[str, list[str]]:
     """
     Get the files for each stock in the given month to process.
 
@@ -80,19 +88,32 @@ def get_files_to_process(month: date_type, lob_path: str) -> dict[str, list[str]
     ----------
     month : Month to process as [year, month].
     lob_path : Path to the limit order book data directory.
+    stocks_to_consider : List of stocks to consider. If None, all stocks in the directory will be considered.
 
     Returns
     -------
     List of file paths for the given month.
     """
+
     files_to_process = {}
     year, month = month
 
     # Convert to a date
     month = f"{year}-{month:02d}"
 
-    for stock in os.listdir(lob_path):
+    # Using all the stocks
+    if stocks_to_consider is None:
+        # Get all the stocks in the directory
+        stocks_to_consider = os.listdir(lob_path)
+
+    for stock in stocks_to_consider:
+        # Convert stock to string
+        stock = str(stock) if not isinstance(stock, str) else stock
         stock_path = os.path.join(lob_path, stock)
+        # Check if exists
+        if not os.path.exists(stock_path):
+            continue
+
         for date in os.listdir(stock_path):
             # Not the correct month
             if month not in date:
@@ -106,6 +127,7 @@ def get_files_to_process(month: date_type, lob_path: str) -> dict[str, list[str]
             files_to_process[date].append(date_path)
 
     return files_to_process
+
 
 def process_day(date: str, files: list[str], save_path: str, horizon: int, sequence_size: int,
                 samples_to_keep: int) -> None:
@@ -121,8 +143,11 @@ def process_day(date: str, files: list[str], save_path: str, horizon: int, seque
     sequence_size : Size of the input sequence.
     samples_to_keep : Number of samples to keep for each date.
     """
+
     # Create a pool of workers
     items = [(file_path, horizon, sequence_size, samples_to_keep) for file_path in files]
+
+    # Parallel processing of files
     with multiprocessing.Pool() as pool:
         results = pool.starmap(process_file, items)
 
@@ -135,7 +160,9 @@ def process_day(date: str, files: list[str], save_path: str, horizon: int, seque
     # Save the results
     tensor_save(results, save_path, date)
 
-def process_file(file_path: str, horizon: int, sequence_size: int, samples_to_keep: int) -> tuple[np.ndarray, np.ndarray]:
+
+def process_file(file_path: str,
+                 horizon: int, sequence_size: int, samples_to_keep: int) -> tuple[np.ndarray, np.ndarray]:
     """
     Process the given file. It is assumed that each file is a parquet file.
 
@@ -144,7 +171,9 @@ def process_file(file_path: str, horizon: int, sequence_size: int, samples_to_ke
     file_path : Path to the file to process.
     horizon : Number of points in the future to use for the target variable.
     sequence_size : Size of the input sequence.
+    samples_to_keep : Number of samples to keep from each stock at a given date.
     """
+
     # Load the data
     df = pd.read_parquet(file_path)
 
@@ -155,12 +184,6 @@ def process_file(file_path: str, horizon: int, sequence_size: int, samples_to_ke
     if x.size == 0 or y.size == 0:
         return np.array([]), np.array([])
 
-    # Normalize the features
-    x = normalize_features(x)
-
-    # Filter outliers
-    x, y = filter_outliers(x, y)
-
     # Checks if the two arrays are the same length
     if x.shape[0] != y.shape[0]:
         print(f"File {file_path} has different lengths for x and y: {x.shape[0]} vs {y.shape[0]}")
@@ -169,6 +192,20 @@ def process_file(file_path: str, horizon: int, sequence_size: int, samples_to_ke
     return x, y
 
 def construct_features(df: pd.DataFrame, horizon: int, sequence_size: int, samples_to_keep: int) -> np.ndarray:
+    """
+    Construct the features for the given stock.
+
+    Parameters
+    ----------
+    df : DataFrame containing the data.
+    horizon : Number of points in the future to use for the target variable.
+    sequence_size : Size of the input sequence.
+    samples_to_keep : Number of samples to keep for each date.
+
+    Returns
+    -------
+    Features for the given stock.
+    """
     arr = df.values
 
     # The last few rows cannot be processed since we do not have enough data outside the window for computing the
@@ -180,18 +217,157 @@ def construct_features(df: pd.DataFrame, horizon: int, sequence_size: int, sampl
         # print(f"File {df} has less than {sequence_size} rows.")
         return np.array([])
 
-    x = np.lib.stride_tricks.sliding_window_view(arr, window_shape=(sequence_size, arr.shape[1]))[:, 0, :, :]
+    # Conversions of prices to returns and volumes to relative volumes
+    arr = convert_to_returns(arr)
+    arr = convert_to_relative_volumes(arr)
 
+    # Adding mid-price changes and total-volume changes
+    mid_price_change = compute_mid_price_change(arr)
+    total_volume_change = compute_total_volume_change(arr)
+    changes = np.stack((mid_price_change, total_volume_change), axis=1) # Creates 2D array with two columns
+    arr = np.hstack((arr, changes)) # Concatenates the columns to the original array
+
+    # Sliding window view to create sequences
+    window_shape = (sequence_size, arr.shape[1])
+    x = np.lib.stride_tricks.sliding_window_view(arr, window_shape=window_shape)[:, 0, :, :]
+
+    # Only keep the last `samples_to_keep` samples
     if x.shape[0] > samples_to_keep:
         x = x[-samples_to_keep:]
-
     x = x.astype(np.float32)
 
+    # Do not return x if there are NaN values
     if np.isnan(x).any():
         print("NaN values found in x")
         return np.array([])
 
     return x
+
+def convert_to_returns(arr: np.array) -> np.ndarray:
+    """
+    Convert prices in the given array to returns relative to the mid-price.
+
+    Parameters
+    ----------
+    arr : Array to process containing price data.
+
+    Returns
+    -------
+    Array with price returns computed.
+    """
+    # Get the mid-price
+    mid_price = compute_mid_price(arr)
+
+    # Obtaining the columns that contain the limit order book prices
+    lob_columns = np.arange(0, 20, 2)
+    prices = arr[:, lob_columns]
+
+    # Convert prices to returns relative to the mid-price
+    returns = np.log(prices / mid_price[:, np.newaxis])
+
+    # Replace the original prices with returns in the array
+    arr[:, lob_columns] = returns
+
+    return arr
+
+def compute_mid_price(x):
+    """
+    Compute the mid-price from the limit order book data.
+
+    Parameters
+    ----------
+    x : Input array
+
+    Returns
+    -------
+    Mid-price at each time step.
+    """
+    best_bid = x[:, 0]  # Best bid price
+    best_ask = x[:, 10]  # Best ask price
+    return (best_bid + best_ask) / 2.0
+
+def convert_to_relative_volumes(arr: np.ndarray) -> np.ndarray:
+    """
+    Convert volumes in the given array to relative volumes.
+
+    Parameters
+    ----------
+    arr : Array to process containing volume data.
+
+    Returns
+    -------
+    Array with relative volumes computed.
+    """
+    # Get the volume columns
+    volume_columns = np.arange(1, 20, 2)
+
+    # Compute the total volume for each sample
+    total_volume = compute_total_volume(arr)
+
+    # Convert volumes to relative volumes
+    arr[:, volume_columns] /= total_volume
+
+    return arr
+
+def compute_total_volume(arr: np.ndarray) -> np.ndarray:
+    """
+    Compute the total volume from the limit order book data.
+
+    Parameters
+    ----------
+    arr : Input array
+
+    Returns
+    -------
+    Total volume at each time step
+    """
+    # Get the volume columns
+    volume_columns = np.arange(1, 20, 2)
+
+    # Compute the total volume for each sample
+    total_volume = np.sum(arr[:, volume_columns], axis=1, keepdims=True)
+
+    return total_volume
+
+def compute_mid_price_change(arr: np.ndarray) -> np.ndarray:
+    """
+    Compute the mid-price change from the limit order book data.
+
+    Parameters
+    ----------
+    arr : Input array
+
+    Returns
+    -------
+    Mid-price change for each sample.
+    """
+    mid_price = compute_mid_price(arr)
+
+    # Compute the change in mid-price
+    mid_price_change = np.zeros_like(mid_price)
+    mid_price_change[1:] = np.log(mid_price[1:] / mid_price[:-1])
+
+    return mid_price_change
+
+def compute_total_volume_change(arr: np.ndarray) -> np.ndarray:
+    """
+    Compute the total volume change from the limit order book data.
+
+    Parameters
+    ----------
+    arr : Input array
+
+    Returns
+    -------
+    Total volume change for each sample.
+    """
+    total_volume = compute_total_volume(arr)
+
+    # Compute the change in total volume
+    total_volume_change = np.zeros_like(total_volume)
+    total_volume_change[1:] = np.log(total_volume[1:] / total_volume[:-1])
+
+    return total_volume_change
 
 def construct_labels(df: pd.DataFrame, horizon: int, sequence_size: int, samples_to_keep: int) -> np.ndarray:
     """
@@ -223,7 +399,8 @@ def construct_labels(df: pd.DataFrame, horizon: int, sequence_size: int, samples
     y = np.log(average_future / averages)
 
     # The first few rows cannot be used due to sequence size window
-    y = y[sequence_size-1:]
+    y = y[sequence_size - 1:]
+
     # And last few rows are NaN because of future window being out of bounds
     y = y[:-horizon]
 
@@ -236,96 +413,6 @@ def construct_labels(df: pd.DataFrame, horizon: int, sequence_size: int, samples
         return np.array([])
 
     return y
-
-def normalize_features(x: np.ndarray) -> np.ndarray:
-    """
-    Normalize the features using min-max normalization. It uses the lowest bid and highest ask prices to normalize the
-    price features. The volumes are normalized by considering all volume features.
-
-    Parameters
-    ----------
-    x : Input features to be normalized.
-
-    Returns
-    -------
-    Normalized features.
-    """
-    # Normalize the prices
-    x = normalize_prices(x)
-
-    # Normalize the volumes
-    x = normalize_volumes(x)
-
-    return x
-
-def normalize_prices(x: np.ndarray) -> np.ndarray:
-    """
-    Normalize the price features using min-max normalization. It uses the lowest bid and highest ask prices to
-    as the min-max range.
-
-    Parameters
-    ----------
-    x : Input features to be normalized.
-
-    Returns
-    -------
-    Normalized features.
-    """
-    # Price columns are even columns
-    price_columns = np.arange(0, 20, 2)
-    bid_columns = price_columns[:5]
-    ask_columns = price_columns[5:]
-
-    # Min-Max is based on highest ask and lowest bid
-    lowest_bid_price = x[:, :, bid_columns[-1]]
-    highest_ask_price = x[:, :, ask_columns[-1]]
-
-    # Find the max and min values
-    min_price = lowest_bid_price.min(axis=1, keepdims=True)
-    max_price = highest_ask_price.max(axis=1, keepdims=True)
-
-    # Both tensors need to be 3D for broadcasting
-    min_price = min_price[:, np.newaxis, :]
-    max_price = max_price[:, np.newaxis, :]
-
-    # Normalize the prices
-    x[:, :, price_columns] = (x[:, :, price_columns] - min_price) / (max_price - min_price)
-
-    return x
-
-def normalize_volumes(x: np.ndarray) -> np.ndarray:
-    """
-    Normalize the volume features using min-max normalization. It uses all the volume features to normalize the
-
-    Parameters
-    ----------
-    x
-
-    Returns
-    -------
-
-    """
-    # Volume columns are uneven columns
-    volume_columns = np.arange(1, 20, 2)
-
-    # Min-Max is based on all the columns
-    min_volume = x[:, :, volume_columns].min(axis=(1, 2), keepdims=True)
-    max_volume = x[:, :, volume_columns].max(axis=(1, 2), keepdims=True)
-
-    # Normalize
-    x[:, :, volume_columns] = (x[:, :, volume_columns] - min_volume) / (max_volume - min_volume)
-
-    return x
-
-def filter_outliers(x, y):
-    # Some results will have values that are greater than 1 or less than 0, which should be impossible
-    # Find where x is greater than 1 or less than 0
-    mask = ((x >= 0) & (x <= 1))
-
-    # We want to get it per sample
-    mask = mask.all(axis=(1, 2))
-
-    return x[mask], y[mask]
 
 def tensor_save(results, save_path: str, date: str) -> None:
     """
