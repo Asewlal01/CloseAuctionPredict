@@ -11,24 +11,26 @@ class LimitOrderBookProcessor(BaseProcessor):
     This class processes limit order book data files. It inherits from the FileProcessor class and implements the
     process_file method.
     """
-    def __init__(self, file_path: str):
+    def __init__(self, file_path: str, max_price: int):
         """
         Initialize the LimitOrderBookProcessor with the path to the file to be processed.
 
         Parameters
         ----------
         file_path : Path to the file to be processed.
+        max_price : Maximum price allowed in the dataframe. If any price exceeds this value, it is considered invalid.
         """
 
         super().__init__(file_path)
+        self.max_price = max_price
 
     def process_file(self):
         """
         Process the trade data file. This method is called during initialization.
         """
-        self.aggregated_data = process_all_days(self.df)
+        self.aggregated_data = process_all_days(self.df, self.max_price)
 
-def process_all_days(df: pd.DataFrame) -> dict[Hashable | datetime.date, pd.DataFrame]:
+def process_all_days(df: pd.DataFrame, max_price) -> dict[Hashable | datetime.date, pd.DataFrame]:
     """
     Process all the days of a given dataframe. Each day is processed in parallel using multiprocessing and the
     process_day function. The results are aggregated into a dictionary with dates as keys and DataFrames as values.
@@ -36,6 +38,7 @@ def process_all_days(df: pd.DataFrame) -> dict[Hashable | datetime.date, pd.Data
     Parameters
     ----------
     df : DataFrame containing the trade data.
+    max_price : Maximum price allowed in the dataframe. If any price exceeds this value, it is considered invalid.
 
     Returns
     -------
@@ -52,7 +55,7 @@ def process_all_days(df: pd.DataFrame) -> dict[Hashable | datetime.date, pd.Data
     groups = df.groupby(df['t'].dt.date)
 
     # Use multiprocessing to process each group in parallel
-    items = [(group, date) for date, group in groups]
+    items = [(group, date, max_price) for date, group in groups]
     with multiprocessing.Pool() as pool:
         processed_groups = pool.starmap(process_day, items)
 
@@ -61,31 +64,35 @@ def process_all_days(df: pd.DataFrame) -> dict[Hashable | datetime.date, pd.Data
 
     return processed_groups
 
-def process_day(df: pd.DataFrame, date: datetime.date) -> tuple[datetime.date, pd.DataFrame]:
+def process_day(df: pd.DataFrame, date: datetime.date, max_price) -> tuple[datetime.date, pd.DataFrame]:
     """
     Process a single day's data. The function checks for missing values, fixes them, and sets the time column as the
-    index.If the data is invalid, it returns an empty DataFrame.
+    index. If the data is invalid, it returns an empty DataFrame.
 
     Parameters
     ----------
     df : Dataframe with the data to be processed.
     date: Date of the data to be processed.
+    max_price: Maximum price allowed in the dataframe. If any price exceeds this value, it is considered invalid.
 
     Returns
     -------
     Dataframe with the aggregated data for the day.
     """
+
+    # Nothing to process
+    if df.empty:
+        return date, pd.DataFrame()
+
     # Check if we have any missing values
     if is_invalid(df):
-        # print(f'Removed {date} due to missing values in the first level')
         return date, pd.DataFrame()
 
     # Fix all the missing data
     df = fix_missing(df)
 
     # Check if we have any missing values
-    if has_missing(df):
-#         print(f'Removed {date} due to missing values in the data')
+    if has_missing(df, max_price):
         return date, pd.DataFrame()
 
     # Set the time column as the index
@@ -112,7 +119,7 @@ def is_invalid(df: pd.DataFrame) -> bool:
     columns = ['bb1', 'bbvol1', 'ba1', 'bavol1']
     df_columns = df[columns]
 
-    # Checks for missing values (missing or zero)
+    # Checks for missing or invalid prices
     invalid = df_columns.isna() * df_columns.eq(0)
 
     # Checks if there are any missing values per column
@@ -139,31 +146,23 @@ def fix_missing(df: pd.DataFrame) -> pd.DataFrame:
     # Fixing rows that are partially empty. Assumed to have 5 LOB levels
     levels = 5
     for i in range(2, levels + 1):
-        # Current level
-        bid_price = f'bb{i}'
-        bid_quantity = f'bbvol{i}'
-        ask_price = f'ba{i}'
-        ask_quantity = f'bavol{i}'
+        for side in ['b', 'a']:
+            price_col = f'b{side}{i}'
+            quantity_col = f'b{side}vol{i}'
+            prev_price_col = f'b{side}{i-1}'
 
-        # Previous level
-        prev_bid_price = f'bb{i-1}'
-        prev_ask_price = f'ba{i-1}'
+            # May be zero or nan, hence we put everything to nan
+            df[price_col] = df[price_col].replace(0, np.nan)
 
-        # May be zero or nan, hence we put everything to nan
-        df[bid_price] = df[bid_price].replace(0, np.nan)
-        df[ask_price] = df[ask_price].replace(0, np.nan)
+            # Price is same as previous level
+            df[price_col] = df[price_col].fillna(df[prev_price_col])
 
-        # Price is same as previous level
-        df[bid_price] = df[bid_price].fillna(df[prev_bid_price])
-        df[ask_price] = df[ask_price].fillna(df[prev_ask_price])
-
-        # Quantity is zero
-        df[bid_quantity] = df[bid_quantity].fillna(0)
-        df[ask_quantity] = df[ask_quantity].fillna(0)
+            # Quantity is zero
+            df[quantity_col] = df[quantity_col].fillna(0)
 
     return df
 
-def has_missing(df: pd.DataFrame) -> bool:
+def has_missing(df: pd.DataFrame, max_price: int) -> bool:
     """
     Check if the dataframe has any missing values. This function is used as a final check after processing the data.
     If it returns True, there is likely something wrong with the dataset, which cannot be fixed by the previous methods.
@@ -171,20 +170,28 @@ def has_missing(df: pd.DataFrame) -> bool:
     Parameters
     ----------
     df : DataFrame to check.
+    max_price : Maximum price allowed in the dataframe. If any price exceeds this value, it is considered invalid.
 
     Returns
     -------
     bool : True if the dataframe has missing values, False otherwise.
     """
-    if df.isna().any().any():
-        return True
 
     # Price checking
     for i in range(1, 6):
-        bid_price = f'bb{i}'
-        ask_price = f'ba{i}'
+        for side in ['b', 'a']:
+            price_col = f'b{side}{i}'
 
-        if df[bid_price].eq(0).any() or df[ask_price].eq(0).any():
-            return True
+            # Nan values means missing values
+            if df[price_col].isna().any():
+                return True
+
+            # Values at and below zero imply missing values
+            if df[price_col].le(0).any():
+                return True
+
+            # The price should not exceed the maximum price
+            if df[price_col].gt(max_price).any():
+                return True
 
     return False
