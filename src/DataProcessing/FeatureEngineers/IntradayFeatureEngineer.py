@@ -1,6 +1,4 @@
 import os
-from typing import Any
-
 from Modeling.DatasetManagers.IntradayDatasetManager import generate_dates, date_type
 import pandas as pd
 import numpy as np
