@@ -11,7 +11,7 @@ class TradeProcessor(BaseProcessor):
     This class processes trade data files. It inherits from the FileProcessor class and implements the process_file method.
     The trade data is assumed to be a gzip compressed CSV file.
     """
-    def __init__(self, file_path: str, lob_data: str):
+    def __init__(self, file_path: str, lob_data: str, max_price):
         """
         Initialize the TradeProcessor with the path to the file to be processed and the interval for aggregation.
         The file is loaded and the 't' column is converted to datetime format.
@@ -23,13 +23,14 @@ class TradeProcessor(BaseProcessor):
         """
         self.aggregated_data = None
         self.lob_data = lob_data
+        self.max_price = max_price
         super().__init__(file_path)
 
     def process_file(self):
         """
         Process the trade data file. This method is called during initialization.
         """
-        self.aggregated_data = process_all_days(self.df, self.lob_data)
+        self.aggregated_data = process_all_days(self.df, self.lob_data, self.max_price)
 
     def save_results(self, save_path):
         # Check if the aggregated data is empty
@@ -47,7 +48,7 @@ class TradeProcessor(BaseProcessor):
             df.to_parquet(file_path)
 
 
-def process_all_days(df: pd.DataFrame, lob_data: str) -> dict[datetime.date, pd.DataFrame]:
+def process_all_days(df: pd.DataFrame, lob_data: str, max_price: int) -> dict[datetime.date, pd.DataFrame]:
     """
     Process all the trades of a given dataframe. All trades within this day are aggregated to a given interval.
     The opening and closing auctions are also included in the aggregated data, with the first row being the opening auction
@@ -63,7 +64,7 @@ def process_all_days(df: pd.DataFrame, lob_data: str) -> dict[datetime.date, pd.
     Dictionary with dates as keys and DataFrames as values. Each DataFrame contains the aggregated trade data for that date.
     """
     # Process the dataframe
-    items = groups_to_process(df, lob_data)
+    items = groups_to_process(df, lob_data, max_price)
     if not items:
         return {}
     with multiprocessing.Pool() as pool:
@@ -74,18 +75,19 @@ def process_all_days(df: pd.DataFrame, lob_data: str) -> dict[datetime.date, pd.
 
     return processed_groups
 
-def groups_to_process(df: pd.DataFrame, lob_data: str) -> list[tuple[pd.DataFrame, datetime.date, pd.Index]]:
+def groups_to_process(df: pd.DataFrame, lob_data: str, max_price) -> list[tuple[pd.DataFrame, datetime.date, pd.Index]]:
     """
     This function returns a list of tuples containing the dataframes to be processed and their corresponding dates.
 
     Parameters
     ----------
-    df
-    lob_data
+    df : DataFrame containing the trade data. It is assumed that the 't' column is in datetime format.
+    lob_data : Path to the processed limit order book data. This is used to get the indices for the trades.
 
     Returns
     -------
-
+    All the groups of trades that can be processed. Each group is a tuple containing the dataframe,
+    the date and the indices of the limit order book data.
     """
 
     # Check if lob_data is a valid directory
@@ -93,28 +95,27 @@ def groups_to_process(df: pd.DataFrame, lob_data: str) -> list[tuple[pd.DataFram
         return []
 
     groups = df.groupby(df['t'].dt.date)
-    lob_dates = [date.split('.')[0] for date in os.listdir(lob_data) if date.endswith('.parquet')]
 
     items = []
     for date, group in groups:
         str_date = str(date)
 
-        # Cannot be processed
-        if str_date not in lob_dates:
+        lob_data_path = os.path.join(lob_data, str_date)
+        lob_data_path = f'{lob_data_path}.parquet'
+        if not os.path.isfile(lob_data_path):
             continue
 
         # Load the lob dataframe
-        lob_file = os.path.join(lob_data, f'{str_date}.parquet')
-        lob_df = pd.read_parquet(lob_file)
+        lob_df = pd.read_parquet(lob_data_path)
 
         # We only need the indices of the lob data
         lob_indices = lob_df.index
 
-        items.append((group, date, lob_indices))
+        items.append((group, date, lob_indices, max_price))
 
     return items
 
-def process_day(df: pd.DataFrame, date: datetime.date, lob_indices: pd.Index) -> tuple[datetime.date, pd.DataFrame]:
+def process_day(df: pd.DataFrame, date: datetime.date, lob_indices: pd.Index, max_price: int) -> tuple[datetime.date, pd.DataFrame]:
     """
     Process all the trades of a given day. All trades within this day are aggregated to a given interval.
     The opening and closing auctions are also included in the aggregated data, with the first row being the opening auction
@@ -125,6 +126,7 @@ def process_day(df: pd.DataFrame, date: datetime.date, lob_indices: pd.Index) ->
     df : DataFrame containing the trade data.
     date : Date of the trades to be processed.
     lob_indices : Indices of the limit order book data.
+    max_price : Maximum price for the trades. This is used to filter out trades that are not relevant.
 
     Returns
     -------
@@ -134,6 +136,10 @@ def process_day(df: pd.DataFrame, date: datetime.date, lob_indices: pd.Index) ->
     # We only need NORMAL trades for processing
     df = df[df['flag'] == 'NORMAL']
     if df.empty:
+        return date, pd.DataFrame()
+
+    # Check if there is a price greater than the max price. This is likely an error in the data.
+    if (df['price'] > max_price).any():
         return date, pd.DataFrame()
 
     # We need to add the first time stamp to the indices if it is before the first lob index
@@ -187,7 +193,8 @@ def aggregate_trades(df: pd.DataFrame, binned: pd.DataFrame) -> pd.DataFrame:
 def aggregate_interval(df: pd.DataFrame) -> pd.Series:
     """
     This function aggregates the trades and quantities within a dataframe to a single row. This row contains the
-    open, high, low, close and vwap prices as well as the total volume of trades.
+    open, high, low, close and vwap prices and the standard deviation of the prices, referred to as 'vwps'. Additionally,
+    the total quantity of trades is also included in the row.
 
     Parameters
     ----------
@@ -201,7 +208,8 @@ def aggregate_interval(df: pd.DataFrame) -> pd.Series:
     volume = df['quantity'].sum()
     if volume == 0:
         return pd.Series({'open': np.nan, 'close': np.nan, 'high': np.nan,
-                          'low': np.nan, 'vwap': np.nan, 'quantity': 0})
+                          'low': np.nan, 'vwap': np.nan, 'vwps': np.nan,
+                          'quantity': 0})
 
     closing = df['price'].iloc[-1]
     opening = df['price'].iloc[0]
@@ -209,12 +217,18 @@ def aggregate_interval(df: pd.DataFrame) -> pd.Series:
     low = df['price'].min()
     vwap = (df['price'] * df['quantity']).sum() / volume
 
+    # Computing vwps
+    deviation_sum = ((df['price'] - vwap) ** 2 * df['quantity']).sum()
+    divisor = max(volume - 1, 1)  # Using N-1 for sample standard deviation and ensuring no division by zero
+    vwps = np.sqrt(deviation_sum / divisor)
+
     return pd.Series({
         'open': opening,
         'close': closing,
         'high': high,
         'low': low,
         'vwap': vwap,
+        'vwps': vwps,
         'quantity': volume,
     })
 
@@ -242,5 +256,8 @@ def fix_missing(df: pd.DataFrame) -> pd.DataFrame:
 
     # Quantity is zero since it is not a price
     df['quantity'] = df['quantity'].fillna(0)
+
+    # VWPS is also set to zero as we have no spread
+    df['vwps'] = df['vwps'].fillna(0)
 
     return df
