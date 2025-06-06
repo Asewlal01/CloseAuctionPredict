@@ -12,5 +12,5 @@ class ExogenousLobLinear(ExogenousBaseLinear):
         ----------
         sequence_size : Number of time steps in the input data
         """
-        feature_size = 20
+        feature_size = 22
         super().__init__(feature_size, sequence_size)

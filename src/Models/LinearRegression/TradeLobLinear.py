@@ -12,5 +12,5 @@ class TradeLobLinear(BaseLinear):
         ----------
         sequence_size : Number of time steps in the input data
         """
-        feature_size = 26
+        feature_size = 29
         super().__init__(feature_size, sequence_size)
