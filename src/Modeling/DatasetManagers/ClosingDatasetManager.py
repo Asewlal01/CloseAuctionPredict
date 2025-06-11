@@ -1,46 +1,31 @@
 import torch
 import os
 from typing import Tuple
-from Modeling.DatasetManagers.IntradayDatasetManager import IntradayDatasetManager
+from Modeling.DatasetManagers.BaseDatasetManager import BaseDatasetManager
+from Modeling.DatasetManagers.IntradayDatasetManager import load_data as load_intraday_data
 
-date_type = list[int]
-
-ExogenousDatasetTuple = Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
-
-class ClosingDatasetManager(IntradayDatasetManager):
-    def __init__(self, dataset_path: str, num_months: int):
+# Represents a tuple containing the data for a single intraday dataset sample in the format (X, y, z).
+ClosingSampleTuple = Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+class ClosingDatasetManager(BaseDatasetManager):
+    """
+    Dataset manager for the closing dataset.
+    """
+    def load_single_day(self, date_path: str) -> ClosingSampleTuple:
         """
-        Initialize the dataset manager.
+        Load the closing data for a specific day.
 
         Parameters
         ----------
-        dataset_path : Path to the dataset directory. Assumed to contain subfolders which represent the data for each month
-        num_months : Number of months to load
+        date_path : Path to the directory containing the data for a specific day.
+        The day is assumed to be in the format 'YYYY-MM-DD'.
+
+        Returns
+        -------
+        Tuple of tensors as (X, y, z).
         """
-        super().__init__(dataset_path, num_months)
+        return load_data(date_path)
 
-        # Different types of data since it also has exogenous features
-        self.dataset: list[list[ExogenousDatasetTuple]] = []
-
-    def load_dataset(self, month_paths: list[str]) -> None:
-        """
-        Load the dataset from the specified directory.
-
-        Parameters
-        ----------
-        month_paths : List of paths to the months to load.
-
-        """
-        if len(month_paths) == 0:
-            raise ValueError('No months paths provided.')
-
-        # Load data for each month
-        for month_path in month_paths:
-            data = load_data(month_path)
-            self.dataset.append(data)
-
-
-def load_data(month_path: str) -> list[ExogenousDatasetTuple]:
+def load_data(date_path: str) -> ClosingSampleTuple:
     """
     Load the data for a specific month. It is assumed that the folder of the month contains subfolders for each
     day within that month. It is assumed that the subfolder contains X, y and z files, which can all be
@@ -49,32 +34,17 @@ def load_data(month_path: str) -> list[ExogenousDatasetTuple]:
 
     Parameters
     ----------
-    month_path : Month for which to load the data. The month is assumed to be in the format 'YYYY-MM'.
+    date_path : Month for which to load the data. The month is assumed to be in the format 'YYYY-MM'.
 
     Returns
     -------
     Tuple of torch tensors as (X, y, z).
     """
-    # Sorting to make sure the data is in the correct order
-    days = os.listdir(month_path)
-    days.sort()
+    # Intraday also has X and y, so we reuse the load_intraday_data function
+    X, y = load_intraday_data(date_path)
 
-    results = []
-    for day in days:
-        # Path to each file
-        path_X = os.path.join(month_path, day, 'x.pt')
-        path_y = os.path.join(month_path, day, 'y.pt')
-        path_Z = os.path.join(month_path, day, 'z.pt')
+    # Loading the exogenous features z
+    path_z = os.path.join(date_path, 'z.pt')
+    z = torch.load(path_z, weights_only=False)
 
-        # Load the data
-        X = torch.load(path_X, weights_only=False)
-        y = torch.load(path_y, weights_only=False)
-        z = torch.load(path_Z, weights_only=False)
-
-        # Make sure y is two-dimensional
-        if len(y.shape) == 1:
-            y = y.unsqueeze(1)
-
-        results.append((X, y, z))
-
-    return results
+    return X, y, z
