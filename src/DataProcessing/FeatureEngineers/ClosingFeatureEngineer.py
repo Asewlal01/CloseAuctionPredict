@@ -1,20 +1,22 @@
 import os
-from Modeling.DatasetManagers.IntradayDatasetManager import date_type, generate_dates
+from DataProcessing.FeatureEngineers.IntradayFeatureEngineer import generate_dates
 import pandas as pd
 import numpy as np
 import multiprocessing
 import torch
 from tqdm import tqdm
-from DataProcessing.DatasetAssemblers.IntradayDatasetAssembler import get_files_to_process
+from DataProcessing.FeatureEngineers.IntradayFeatureEngineer import get_files_to_process
 from datetime import datetime
+
+date_type = list[int, int]
 
 class ClosingDatasetAssembler:
     """
     Assembles Closing Auction datasets for analysis.
     """
 
-    def __init__(self, lob_path: str, trade_path: str, auction_path: str, save_path: str, sequence_size: int=360,
-                 horizon: int=5) -> None:
+    def __init__(self, lob_path: str, trade_path: str, auction_path: str, save_path: str, sequence_size: int = 360,
+                 horizon: int = 5) -> None:
         """
         Initialize the ClosingDatasetAssembler.
 
@@ -35,7 +37,7 @@ class ClosingDatasetAssembler:
         self.sequence_size = sequence_size
         self.horizon = horizon
 
-    def assemble_dataset(self, start_date: date_type, end_date: date_type) -> None:
+    def assemble_dataset(self, start_date: date_type, end_date: date_type, stocks_to_consider: list = None) -> None:
         """
         Assemble the intraday dataset.
 
@@ -43,6 +45,7 @@ class ClosingDatasetAssembler:
         ----------
         start_date : Start date for the dataset as [year, month].
         end_date : End date for the dataset as [year, month].
+        stocks_to_consider : List of stocks to consider. If empty, all stocks are considered.
         """
         # Generate all the months to loop over
         months = generate_dates(start_date, end_date)
@@ -51,11 +54,12 @@ class ClosingDatasetAssembler:
         for month in tqdm(months):
             process_month(month,
                           self.lob_path, self.trade_path, self.auction_path, self.save_path,
-                          self.horizon, self.sequence_size)
+                          self.horizon, self.sequence_size, stocks_to_consider)
+
 
 def process_month(month: date_type,
                   lob_path: str, trade_path: str, auction_path: str, save_path: str,
-                  horizon: int, sequence_size: int) -> None:
+                  horizon: int, sequence_size: int, stocks_to_consider: list) -> None:
     """
     Process all files for a given month.
 
@@ -68,20 +72,20 @@ def process_month(month: date_type,
     save_path : Path to save the processed data.
     horizon : Number of points in the future to use for the target variable.
     sequence_size : Size of the input sequence.
+    stocks_to_consider : List of stocks to consider. If empty, all stocks are considered.
     """
     # Get all the files for the month
-    files_to_process = get_files_to_process(month, lob_path)
+    files_to_process = get_files_to_process(month, lob_path, stocks_to_consider)
     if not files_to_process:
         print(f"No files to process for month {month}.")
         return
 
-    # Save path needs to exist to save the data
-    month_save_path = os.path.join(save_path, f'{month[0]}-{month[1]}')
-    os.makedirs(month_save_path, exist_ok=True)
-
     # Go through all the dates
-    for date, files in files_to_process.items():
-        process_day(date, files, auction_path, trade_path, month_save_path, horizon, sequence_size)
+    items = [(date, files, auction_path, trade_path, save_path, horizon, sequence_size) for date, files in
+             files_to_process.items()]
+    with multiprocessing.Pool() as pool:
+        pool.starmap(process_day, items)
+
 
 def process_day(date: str, files: list[str], auction_path: str, trade_path: str, save_path: str,
                 horizon: int, sequence_size: int) -> None:
@@ -99,8 +103,7 @@ def process_day(date: str, files: list[str], auction_path: str, trade_path: str,
     sequence_size : Size of the input sequence.
     """
     items = [(file_path, auction_path, trade_path, horizon, sequence_size) for file_path in files]
-    with multiprocessing.Pool() as pool:
-        results = pool.starmap(process_file, items)
+    results = [process_file(*item) for item in items]
 
     # Filtering
     filtered_results = []
@@ -114,6 +117,7 @@ def process_day(date: str, files: list[str], auction_path: str, trade_path: str,
 
     # Saving
     tensor_save(filtered_results, save_path, date, horizon)
+
 
 def process_file(file_path: str, auction_path: str, trade_path: str,
                  horizon: int, sequence_size: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -137,13 +141,22 @@ def process_file(file_path: str, auction_path: str, trade_path: str,
     if lob_df.empty or lob_df.shape[0] < sequence_size:
         return np.array([]), np.ndarray([]), np.ndarray([])
 
-    x = construct_features(lob_df, trade_path, day, idx, sequence_size)
-    y = construct_labels(lob_df, auction_path, day, idx, horizon)
+    # Get the trade data
+    trade_df = get_trade_data(idx, day, trade_path)
+    auction_df = get_auction_data(idx, day, auction_path)
+    if trade_df.empty or auction_df.empty:
+        return np.array([]), np.ndarray([]), np.ndarray([])
+
+    # Constructing the variables
+    x = construct_features(lob_df, trade_df, auction_df, sequence_size)
+    y = construct_labels(lob_df, auction_df, day, idx, horizon)
     z = construct_exogenous(day, idx, auction_path, file_path, horizon)
 
     return x, y, z
 
-def construct_features(lob_df: pd.DataFrame, trade_path: str, day: str, idx: str, sequence_size: int) -> np.ndarray:
+
+def construct_features(lob_df: pd.DataFrame, trade_df: pd.DataFrame, auction_df: pd.DataFrame,
+                       sequence_size: int) -> np.ndarray:
     """
     Construct the features for the model. Returns an empty array if the trade data is empty or if there are not
     enough rows.
@@ -151,7 +164,8 @@ def construct_features(lob_df: pd.DataFrame, trade_path: str, day: str, idx: str
     Parameters
     ----------
     lob_df : DataFrame containing the limit order book data.
-    trade_path : Path to the trade data directory.
+    trade_df : DataFrame containing the trade data.
+    auction_df : DataFrame containing the auction data.
     day : Day to get the data for.
     idx : Stock index.
     sequence_size : Size of the input sequence.
@@ -160,12 +174,11 @@ def construct_features(lob_df: pd.DataFrame, trade_path: str, day: str, idx: str
     -------
     Feature set for the model.
     """
-    # Get the trade data
-    trade_df = get_trade_data(idx, day, trade_path)
+    # Get opening auction row
+    opening_row = auction_df.loc['open']
 
-    # If the trade data is empty, we cannot create the features
-    if trade_df.empty:
-        return np.array([])
+    # Replace all nan values in lob_df with the opening price
+    trade_df.fillna(opening_row['Price'], inplace=True)
 
     # Concat the two dataframes
     df = pd.concat([lob_df, trade_df], axis=1)
@@ -175,8 +188,26 @@ def construct_features(lob_df: pd.DataFrame, trade_path: str, day: str, idx: str
     if arr.shape[0] < sequence_size:
         return np.array([])
 
+    # Get all features
+    returns = price_returns(arr)
+    relative_volume = relative_lob_volume(arr)
+    mid_price_change_arr = mid_price_change(arr, opening_row['Price'])
+    total_volume_change_arr = total_volume_change(arr)
+    cumulative_volume_change_arr = cumulative_volume_change(arr, opening_row['Quantity'])
+    vwps = arr[:, -2][:, np.newaxis]  # VWAP is the second last column in the trade data
+
+    # Returns are split into lob returns and trade returns for easier removal at later stages
+    lob_returns = returns[:, :10]  # LOB prices are the first 10 columns
+    trade_returns = returns[:, 10:]  # Trade prices are the last 5 columns
+
+    # Combining the features
+    x = np.concatenate((
+        lob_returns, relative_volume, mid_price_change_arr, total_volume_change_arr,
+        trade_returns, cumulative_volume_change_arr, vwps
+    ), axis=1)
+
     # Only keep the sequence_size last rows
-    x = arr[-sequence_size:]
+    x = x[-sequence_size:]
     x = x.astype(np.float32)
 
     # Checking for nans
@@ -184,6 +215,7 @@ def construct_features(lob_df: pd.DataFrame, trade_path: str, day: str, idx: str
         return np.array([])
 
     return x
+
 
 def get_trade_data(idx, day, trade_path):
     """
@@ -202,7 +234,9 @@ def get_trade_data(idx, day, trade_path):
     df = pd.read_parquet(file_path)
     return df
 
-def construct_labels(lob_df: pd.DataFrame, auction_path: str, day: str, idx: str, horizon: int) -> np.ndarray:
+
+def construct_labels(lob_df: pd.DataFrame, auction_df: pd.DataFrame, day: str, idx: str,
+                     horizon: int) -> np.ndarray:
     """
     Construct the labels for the model. Returns an empty array if the auction data is empty or if there are not
     enough rows.
@@ -219,15 +253,9 @@ def construct_labels(lob_df: pd.DataFrame, auction_path: str, day: str, idx: str
     -------
     The label, which is the log return of the closing price over the average price.
     """
-    # Get the auction data
-    auction_data = get_auction_data(idx, day, auction_path)
-
-    # Empty auction data
-    if auction_data.empty:
-        return np.array([])
 
     # Get the closing price
-    closing_row = auction_data.loc['close']
+    closing_row = auction_df.loc['close']
     closing_price = closing_row['Price']
 
     # Determine the mid-price of the last horizon rows
@@ -240,6 +268,7 @@ def construct_labels(lob_df: pd.DataFrame, auction_path: str, day: str, idx: str
 
     return np.array([y])
 
+
 def construct_exogenous(day: str, idx: str, auction_path: str, file_path: str, horizon: int) -> np.ndarray:
     """
     Construct the exogenous features for the model. This is based on the previous day data, and today's opening
@@ -247,6 +276,7 @@ def construct_exogenous(day: str, idx: str, auction_path: str, file_path: str, h
     closing price).
 
     Parameters
+
     ----------
     day : Day to get the data for.
     idx : Stock index.
@@ -271,7 +301,6 @@ def construct_exogenous(day: str, idx: str, auction_path: str, file_path: str, h
     if today_auction_data.empty:
         return np.array([])
 
-
     # Get the closing price for the previous day and today's opening price
     previous_closing_row = previous_auction_data.loc['close']
     previous_closing_price = previous_closing_row['Price']
@@ -290,7 +319,7 @@ def construct_exogenous(day: str, idx: str, auction_path: str, file_path: str, h
     if previous_lob_df.empty or previous_lob_df.shape[0] < horizon:
         return np.array([])
 
-    previous_day_return = construct_labels(previous_lob_df, auction_path, previous_day, idx, horizon)
+    previous_day_return = construct_labels(previous_lob_df, previous_auction_data, previous_day, idx, horizon)
     if previous_day_return.size == 0:
         return np.array([])
 
@@ -319,6 +348,7 @@ def get_previous_day(day: str) -> str:
         date = date - pd.DateOffset(days=1)
     return date.strftime('%Y-%m-%d')
 
+
 def previous_file_path(today_file_path: str, previous_day: str) -> str:
     """
     Get the previous file path for a given file path. It is assumed that the file path is in the format
@@ -338,6 +368,7 @@ def previous_file_path(today_file_path: str, previous_day: str) -> str:
 
     return previous_day_path
 
+
 def tensor_save(results: list[tuple[np.ndarray, np.ndarray, np.ndarray]], save_path: str, date: str, horizon) -> None:
     """
     Save the results to a tensor file.
@@ -353,12 +384,6 @@ def tensor_save(results: list[tuple[np.ndarray, np.ndarray, np.ndarray]], save_p
     x = np.stack(xs, axis=0)
     y = np.stack(ys, axis=0)
     z = np.stack(zs, axis=0)
-
-    # Normalize
-    x, z = normalize_features(x, z, horizon)
-
-    # Filter out results
-    x, y, z = filter_outliers(x, y, z)
 
     # Converting to tensors
     x = torch.tensor(x, dtype=torch.float32)
@@ -382,172 +407,6 @@ def tensor_save(results: list[tuple[np.ndarray, np.ndarray, np.ndarray]], save_p
     torch.save(y, y_save_path)
     torch.save(z, z_save_path)
 
-def normalize_features(x: np.ndarray, z: np.ndarray, horizon: int) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Normalize the features.
-
-    Parameters
-    ----------
-    x : Features to normalize.
-    z : Exogenous features to normalize.
-    horizon : Number of points in the future to use for the target variable.
-
-    Returns
-    -------
-    Normalized features.
-    """
-    # Normalize the prices
-    x = normalize_prices(x, horizon)
-
-    # Normalize the volumes
-    x = normalize_volumes(x, horizon)
-
-    # Normalize traded volume
-    x = normalize_traded_volume(x, horizon)
-
-    # Normalize exogenous features
-    z = normalize_exogenous(z)
-
-    return x, z
-
-def normalize_prices(x: np.ndarray, horizon: int) -> np.ndarray:
-    """
-    Normalize the prices.
-
-    Parameters
-    ----------
-    x : Prices to normalize.
-    horizon : Number of points in the future to use for the target variable.
-
-    Returns
-    -------
-    Normalized prices.
-    """
-    # Lob price columns are first even 20 columns
-    lob_price_columns = np.arange(0, 20, 2)
-
-    # The last 5 excluding the last one are trade prices (open, close, high, low, vwap)
-    trade_price_columns = np.arange(20, 25)
-
-    # Combining them
-    price_columns = np.concat([lob_price_columns, trade_price_columns], axis=0)
-
-    # The minimum price is based on lowest bid
-    lowest_bid = x[:, :-horizon, lob_price_columns[4]]
-    min_lowest_bid = lowest_bid.min(axis=1, keepdims=True)
-
-    # The maximum price is based on highest ask
-    highest_ask = x[:, :-horizon, lob_price_columns[9]]
-    max_highest_ask = highest_ask.max(axis=1, keepdims=True)
-
-    # Both arrays need to be 3D for proper broadcasting
-    min_price = min_lowest_bid[:, np.newaxis, :]
-    max_price = max_highest_ask[:, np.newaxis, :]
-
-    # Normalization
-    x[:, :, price_columns] = (x[:, :, price_columns] - min_price) / (max_price - min_price)
-
-    return x
-
-def normalize_volumes(x: np.ndarray, horizon: int) -> np.ndarray:
-    """
-    Normalize the volume features using min-max normalization. It uses all the volume features to normalize the
-
-    Parameters
-    ----------
-    x: Volume features to normalize.
-    horizon: Number of points in the future to use for the target variable.
-
-    Returns
-    -------
-
-    """
-    # Volume columns are uneven columns
-    volume_columns = np.arange(1, 20, 2)
-
-    # Min-Max is based on all the columns
-    min_volume = x[:, :-horizon, volume_columns].min(axis=(1, 2), keepdims=True)
-    max_volume = x[:, :-horizon, volume_columns].max(axis=(1, 2), keepdims=True)
-
-    # Normalize
-    x[:, :, volume_columns] = (x[:, :, volume_columns] - min_volume) / (max_volume - min_volume)
-
-    return x
-
-def normalize_traded_volume(x: np.ndarray, horizon: int) -> np.ndarray:
-    """
-    Normalize the traded volume.
-
-    Parameters
-    ----------
-    x : Traded volume to normalize.
-    horizon : Number of points in the future to use for the target variable.
-
-    Returns
-    -------
-    Normalized traded volume.
-    """
-    # The traded volume is the last column
-    traded_volume = x[:, :-horizon, -1]
-
-    # The minimum and maximum traded volume
-    min_traded_volume = traded_volume.min(axis=1, keepdims=True)
-    max_traded_volume = traded_volume.max(axis=1, keepdims=True)
-
-    # Normalization
-    x[:, :, -1] = (x[:, :, -1] - min_traded_volume) / (max_traded_volume - min_traded_volume)
-
-    return x
-
-def normalize_exogenous(z: np.ndarray) -> np.ndarray:
-    """
-    Normalize the exogenous features.
-
-    Parameters
-    ----------
-    z : Exogenous features to normalize.
-
-    Returns
-    -------
-    Normalized exogenous features.
-    """
-    # Get min and max
-    min_z = z.min(axis=0, keepdims=True)
-    max_z = z.max(axis=0, keepdims=True)
-
-    # Normalization
-    z = (z - min_z) / (max_z - min_z)
-
-    return z
-
-def filter_outliers(x: np.ndarray, y: np.ndarray, z: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Filter out outliers from the dataset. The outliers are samples which contains values smaller than 0 or greater than
-    1 in the lower lob levels.
-
-    Parameters
-    ----------
-    x : Features to filter.
-    y : Labels
-    z : Exogenous features
-
-    Returns
-    -------
-    Filtered features, labels and exogenous features.
-    """
-    # Lob price columns are first even 20 columns
-    lob_price_columns = np.arange(0, 20, 2)
-
-    # Check if the values are between 0 and 1
-    mask = np.all((x[:, :, lob_price_columns] >= 0) & (x[:, :, lob_price_columns] <= 1), axis=(1, 2))
-
-    # Filter the data
-    x = x[mask]
-    y = y[mask]
-    z = z[mask]
-
-    return x, y, z
-
 def get_idx_and_day(file_path: str) -> tuple[str, str]:
     """
     Get the index and day from the file path.
@@ -568,6 +427,7 @@ def get_idx_and_day(file_path: str) -> tuple[str, str]:
     day = day.split('.')[0]
 
     return idx, day
+
 
 def get_auction_data(idx: str, day: str, auction_path: str) -> pd.DataFrame:
     """
@@ -592,3 +452,107 @@ def get_auction_data(idx: str, day: str, auction_path: str) -> pd.DataFrame:
     # Load the data
     df = pd.read_parquet(path)
     return df
+
+def compute_mid_price(x):
+    """
+    Compute the mid-price from the limit order book data.
+
+    Parameters
+    ----------
+    x : Input array
+
+    Returns
+    -------
+
+    """
+    best_bid = x[:, 0]  # Best bid price
+    best_ask = x[:, 10]  # Best ask price
+    return (best_bid + best_ask) / 2.0
+
+def compute_total_lob_volume(x):
+    """
+    Calculate the total volume in the LOB.
+    """
+    lob_volume_cols = np.arange(1, 20, 2)
+
+    return np.sum(x[:, lob_volume_cols], axis=1)
+
+def price_returns(x):
+    """
+    Calculate the price returns based on the mid-price.
+    """
+    # Get the mid-price
+    mid_price = compute_mid_price(x)
+
+    # Columns with prices
+    lob_prices = np.arange(0, 20, 2)
+    trade_prices = np.arange(20, 25, 1)
+    price_cols = np.concatenate((lob_prices, trade_prices))
+    prices = x[:, price_cols]
+
+    # Compute log returns relative to the mid-price
+    mid_price = mid_price[:, np.newaxis]  # Reshape mid_price for broadcasting
+    returns = np.log(prices / mid_price)
+
+    return returns
+
+def relative_lob_volume(x):
+    """
+
+    Parameters
+    ----------
+    x
+
+    Returns
+    -------
+
+    """
+
+    total_volume = compute_total_lob_volume(x)
+    lob_volume_cols = torch.arange(1, 20, 2)
+
+    # Calculate relative volume for each LOB level
+    total_volume = total_volume[:, np.newaxis]  # Reshape total_volume for broadcasting
+    relative_volume = x[:, lob_volume_cols] / total_volume
+
+    return relative_volume
+
+def mid_price_change(x, opening_price):
+    """
+    Calculate the change in mid-price.
+    """
+    mid = compute_mid_price(x)
+
+    mid_change = np.copy(mid)
+    mid_change[1:] = np.log(mid_change[1:] / mid_change[:-1])
+    mid_change[0] = np.log(mid[0] / opening_price)
+
+    return mid_change[:, np.newaxis]  # Add a new axis to match the shape of other features
+
+def total_volume_change(x):
+    """
+    Calculate the change in total LOB volume.
+    """
+
+    total_lob_volume = compute_total_lob_volume(x)
+
+    lob_volume_change = np.copy(total_lob_volume)
+    lob_volume_change[1:] = np.log(lob_volume_change[1:] / lob_volume_change[:-1])
+    lob_volume_change[0] = 0 # There is no limit order book volume change at the first time step
+
+    return lob_volume_change[:, np.newaxis]  # Add a new axis to match the shape of other features
+
+def cumulative_volume_change(x, opening_volume):
+    """
+    Calculate the cumulative volume change for each LOB level.
+    """
+
+    trade_volume = x[:, -1]  # Trade volumes
+    cumulative_volume = np.cumsum(trade_volume) + opening_volume
+
+    # Compute log-changes
+    log_changes = np.copy(cumulative_volume)
+    log_changes[1:] = np.log(log_changes[1:] / log_changes[:-1])
+    log_changes[0] = np.log(cumulative_volume[0] / opening_volume)
+
+    return log_changes[:, np.newaxis]  # Add a new axis to match the shape of other features
