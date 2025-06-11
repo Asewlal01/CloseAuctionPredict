@@ -1,0 +1,6 @@
+run:
+  path_to_dataset: 'data/dataset/hyperparameter_tuning'
+  n_sets: 3
+  prefix: 'set_'
+  save_path: 'results/hyperparameter_tuning'
+  trials: 100
