@@ -1,4 +1,4 @@
-from Models.ConvolutionalModels.ExogenousTradeLobConvolve import ExogenousTradeLobConvolve
+from Models.ConvolutionalModels.LobConvolve import LobConvolve
 from Modeling.HyperOptimizers.BaseHyperOptimizer import BaseHyperOptimizer
 from optuna import Trial
 import torch
@@ -7,7 +7,7 @@ class ConvolutionalHyperOptimizer(BaseHyperOptimizer):
     """
     Class to optimize the hyperparameters of the Convolutional model using Optuna.
     """
-    def generate_model(self, trial: Trial, sequence_size: int) -> ExogenousTradeLobConvolve:
+    def generate_model(self, trial: Trial, sequence_size: int) -> LobConvolve:
         """
         Generate a Convolutional model with hyperparameters sampled from the trial.
 
@@ -38,7 +38,7 @@ class ConvolutionalHyperOptimizer(BaseHyperOptimizer):
 
         fc_neurons, dropout = self.generate_common_parameter(trial)
 
-        model = ExogenousTradeLobConvolve(sequence_size, conv_channels, fc_neurons, kernel_sizes, dropout=dropout)
+        model = LobConvolve(sequence_size, conv_channels, fc_neurons, kernel_sizes, dropout=dropout)
         device = "cuda" if torch.cuda.is_available() else "cpu"
         model.to(device)
 

@@ -1,4 +1,4 @@
-from Modeling.DatasetManagers.ClosingDatasetManager import ClosingDatasetManager
+from Modeling.DatasetManagers.IntradayDatasetManager import IntradayDatasetManager
 from Modeling.ModelRunner import ModelRunner
 from Models.BaseModel import BaseModel
 import optuna, os, torch, gc
@@ -99,7 +99,7 @@ class BaseHyperOptimizer:
             for i in range(self.n_sets):
                 # Initialize dataset managers
                 path_to_set = os.path.join(self.path_to_datasets, f'{self.prefix}{i + 1}')
-                dataset_manager = ClosingDatasetManager(path_to_set)
+                dataset_manager = IntradayDatasetManager(path_to_set)
                 training_params = self.config['training_params']
 
                 train_size = training_params['train_size']
@@ -111,7 +111,7 @@ class BaseHyperOptimizer:
                 # Initialize model runner
                 dataset_manager = dataset_managers[i]
                 model_runner = ModelRunner(model, dataset_manager, sequence_size,
-                                           use_trading=True, use_exogenous=True)
+                                           use_trading=False, use_exogenous=False)
 
                 # Training the model
                 training_params = self.config['training_params']

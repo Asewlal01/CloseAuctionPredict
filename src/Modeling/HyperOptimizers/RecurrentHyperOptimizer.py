@@ -1,4 +1,4 @@
-from Models.ReccurentModels.ExogenousTradeLobLSTM import ExogenousTradeLobLSTM
+from Models.ReccurentModels.LobLSTM import LobLSTM
 from Modeling.HyperOptimizers.BaseHyperOptimizer import BaseHyperOptimizer
 from optuna import Trial
 import torch
@@ -7,7 +7,7 @@ class RecurrentHyperOptimizer(BaseHyperOptimizer):
     """
     Class to optimize the hyperparameters of the Recurrent model using Optuna.
     """
-    def generate_model(self, trial: Trial, sequence_size: int) -> ExogenousTradeLobLSTM:
+    def generate_model(self, trial: Trial, sequence_size: int) -> LobLSTM:
         """
         Generate a Recurrent model with hyperparameters sampled from the trial.
 
@@ -27,7 +27,7 @@ class RecurrentHyperOptimizer(BaseHyperOptimizer):
         lstm_size = trial.suggest_int('lstm_size', lstm_size_min, lstm_size_max, step=lstm_size_step)
         fc_neurons, dropout = self.generate_common_parameter(trial)
 
-        model = ExogenousTradeLobLSTM(hidden_size, lstm_size, fc_neurons, dropout=dropout)
+        model = LobLSTM(hidden_size, lstm_size, fc_neurons, dropout=dropout)
         device = "cuda" if torch.cuda.is_available() else "cpu"
         model.to(device)
 

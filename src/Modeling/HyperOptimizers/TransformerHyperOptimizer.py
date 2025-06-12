@@ -1,4 +1,4 @@
-from Models.TransformerModels.ExogenousTradeLobTransformer import ExogenousTradeLobTransformer
+from Models.TransformerModels.LobTransformer import LobTransformer
 from Modeling.HyperOptimizers.BaseHyperOptimizer import BaseHyperOptimizer
 from optuna import Trial
 import torch
@@ -7,7 +7,7 @@ class TransformerHyperOptimizer(BaseHyperOptimizer):
     """
     Class to optimize the hyperparameters of the Transformer model using Optuna.
     """
-    def generate_model(self, trial: Trial, sequence_size: int) -> ExogenousTradeLobTransformer:
+    def generate_model(self, trial: Trial, sequence_size: int) -> LobTransformer:
         """
         Generate a Transformer model with hyperparameters sampled from the trial.
 
@@ -35,7 +35,7 @@ class TransformerHyperOptimizer(BaseHyperOptimizer):
 
         fc_neurons, dropout = self.generate_common_parameter(trial)
 
-        model = ExogenousTradeLobTransformer(
+        model = LobTransformer(
             sequence_size=sequence_size,
             embedding_size=embedding_size,
             num_heads=num_heads,

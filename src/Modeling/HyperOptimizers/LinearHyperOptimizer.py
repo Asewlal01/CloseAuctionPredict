@@ -1,4 +1,4 @@
-from Models.LinearRegression.ExogenousTradeLobLinear import ExogenousTradeLobLinear
+from Models.LinearRegression.LobLinear import LobLinear
 from Modeling.HyperOptimizers.BaseHyperOptimizer import BaseHyperOptimizer
 from optuna import Trial
 
@@ -6,7 +6,7 @@ class LinearHyperOptimizer(BaseHyperOptimizer):
     """
     Class to optimize the hyperparameters of the Linear Regression model using Optuna.
     """
-    def generate_model(self, trial: Trial, sequence_size: int) -> ExogenousTradeLobLinear:
+    def generate_model(self, trial: Trial, sequence_size: int) -> LobLinear:
         """
         Generate a Linear Regression model with hyperparameters sampled from the trial.
 
@@ -19,6 +19,6 @@ class LinearHyperOptimizer(BaseHyperOptimizer):
         -------
         Linear model with randomly generated hyperparameters.
         """
-        model = ExogenousTradeLobLinear(sequence_size)
+        model = LobLinear(sequence_size)
 
         return model
