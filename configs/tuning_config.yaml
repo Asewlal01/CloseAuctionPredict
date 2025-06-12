@@ -5,10 +5,10 @@ dataset:
 
 run:
   save_path: 'results/hyperparameter_tuning'
-  n_trials: 100
+  n_trials: 50
 
 training_params:
-  train_size: 189
+  train_size: 193
   validation_size: 20
   epochs: 50
   learning_rate: 0.001
