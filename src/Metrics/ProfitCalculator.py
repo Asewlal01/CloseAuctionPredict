@@ -1,168 +1,210 @@
 import torch
-import torch.nn as nn
 
-class ProfitCalculator(nn.Module):
+class ProfitCalculator:
     """
     This class can be used to compute profit statistics for a given set of predictions and true values.
     """
-    def __init__(self, short_threshold=0, long_threshold=0, find_thresholds=False, lr=0.001):
+    def __init__(self, daily_predictions: list[torch.Tensor], threshold: float=0.5, weighted: bool=False):
         """
-        Initializes the ProfitCalculator.
+        Initializes the ProfitCalculator with daily predictions, a threshold, and a flag for weighted calculations.
 
         Parameters
         ----------
-        short_threshold : Threshold to enter a short position.
-        long_threshold : Threshold to enter a long position.
-        find_thresholds : Whether to find the optimal thresholds.
-        lr : Learning rate for the optimizer.
+        daily_predictions : Predictions of the model for each day. Should be a list of torch.Tensor with the first
+        column being the predicted values and the second column being the true values.
+        threshold : Threshold of entering a position.
+        weighted : If True, the size of the position is weighted by the predicted value.
         """
-        super(ProfitCalculator, self).__init__()
-        self.find_thresholds = find_thresholds
+        self.returns = []
+        for prediction in daily_predictions:
+            if isinstance(prediction, torch.Tensor) and prediction.dim() == 2 and prediction.size(1) == 2:
+                daily_return = compute_daily_return(prediction, threshold, weighted)
+                self.returns.append(daily_return)
 
-        # Save the thresholds as tensors
-        short_threshold = torch.tensor([short_threshold])
-        long_threshold = torch.tensor([long_threshold])
+            else:
+                raise ValueError("Each prediction must be a 2D tensor with two columns: predicted and true values.")
 
-        if find_thresholds:
-            self.optimizer = torch.optim.Adam(self.parameters(), lr=lr)
+        # Allows for easier computations
+        self.returns = torch.tensor(self.returns)
 
-        self.short_threshold = nn.Parameter(short_threshold, requires_grad=find_thresholds)
-        self.long_threshold = nn.Parameter(long_threshold, requires_grad=find_thresholds)
-
-    def forward(self, y_pred, y_true):
+    def win_rate(self) -> float:
         """
-        This function computes the mean profit for a given set of predictions and true values.
-
-        Parameters
-        ----------
-        y_pred : Predicted values.
-        y_true : True values.
+        Computes the win rate of the predictions. Defined as the percentage of days where the return was positive.
 
         Returns
         -------
-        Mean profit made by the strategy
+        The win rate as a float.
         """
+        positive_returns = (self.returns > 1).sum().float().item()
+        total_returns = len(self.returns)
 
-        profits = compute_profit(y_pred, y_true, self.short_threshold.item(), self.long_threshold.item())
-        return profits.mean() / maximum_profit(y_true)
+        return positive_returns / total_returns
 
-    def approximated_profit(self, y_pred, y_true):
+    def expected_return(self) -> float:
         """
-        This function computes the mean profit for a given set of predictions and true values. It approximates the
-        profit function by using a sigmoid instead of a Heaviside function. This allows for differentiability which is
-        needed to find the optimal thresholds.
-
-        Parameters
-        ----------
-        y_pred : Predicted values.
-        y_true : True values.
+        Computes the expected return of the predictions. Defined as the average log-return across all days.
 
         Returns
         -------
-        Approximated mean profit made by the strategy.
+        The expected return as a float.
         """
-        profits = approximated_profit(y_pred, y_true, self.short_threshold, self.long_threshold)
-        return profits.mean()
+        log_returns = torch.log(self.returns)
 
-    def compounded_profit(self, y_pred, y_true):
+        return log_returns.mean().item()
+
+    def sharpe_ratio(self) -> float:
         """
-        This function computes the compounded profit for a given set of predictions and true values.
-        It assumes that it keeps reinvesting the profits made by the strategy, hence compounding the returns.
-
-        Parameters
-        ----------
-        y_pred : Predicted values.
-        y_true : True values.
+        Computes the Sharpe ratio of the predictions. Based on log-returns, similar to the expected return.
 
         Returns
         -------
-        Compounded profit made by the strategy.
+        The Sharpe ratio as a float.
         """
-        profits = compute_profit(y_pred, y_true, self.short_threshold.item(), self.long_threshold.item())
-        return (1 + profits).prod()
+        log_returns = torch.log(self.returns)
+        mean_return = log_returns.mean().item()
+        std_return = log_returns.std().item()
 
-    def find_thresholds(self, y_pred, y_true, steps=100):
+        return mean_return / std_return
+
+    def maximum_drawdown(self) -> float:
         """
-        This function finds the optimal thresholds for the short and long positions.
-
-        Parameters
-        ----------
-        y_pred : Predicted values.
-        y_true : True values.
-        steps : Number of steps to optimize the thresholds.
+        Computes the maximum drawdown of the predictions. Based on log-returns, similar to the expected return.
 
         Returns
         -------
-        Optimal thresholds and the best profit.
+        The maximum drawdown as a float.
         """
-        if not self.find_thresholds:
-            raise ValueError("This model was not initialized to find thresholds.")
-        for _ in range(steps):
-            self.optimizer.zero_grad()
-            loss = -self.approximated_profit(y_pred, y_true)
-            loss.backward()
-            self.optimizer.step()
+        log_returns = torch.log(self.returns)
+
+        # Calculate cumulative returns
+        cumulative_returns = torch.cumsum(log_returns, dim=0)
+
+        # Find the running maximum
+        running_max = torch.cummax(cumulative_returns, dim=0)[0]
+
+        # Calculate drawdowns
+        drawdowns = running_max - cumulative_returns
+
+        # Return the maximum drawdown
+        return drawdowns.max().item()
+
+    def total_cumulative_return(self) -> float:
+        """
+        Computes the total cumulative return of the predictions. Defined as the product of daily returns minus one.
+
+        Returns
+        -------
+        The total cumulative return as a float.
+        """
+        cumulative_returns = torch.prod(self.returns)
+
+        return cumulative_returns.item() - 1
+
+    def cumulative_return(self) -> torch.Tensor:
+        """
+        Computes the cumulative return of the predictions. Defined as the product of daily returns minus one.
+
+        Returns
+        -------
+        The cumulative return as a float.
+        """
+        cumulative_returns = torch.cumprod(self.returns, dim=0)
+
+        return cumulative_returns - 1
 
 
-def compute_profit(y_pred, y_true, short_threshold, long_threshold):
+def compute_daily_return(predictions: torch.Tensor, threshold: float, weighted: bool) -> float:
+        """
+        Computes the daily return based on predictions and a threshold.
+
+        Parameters
+        ----------
+        predictions : A tensor containing the predicted values as the first column and the true values as the second column.
+        threshold : The threshold for entering a position.
+        weighted : If True, the size of the position is weighted by the predicted value.
+
+        Returns
+        -------
+        The daily return as a tensor
+        """
+        # Determine the positions we take based on the predictions and threshold
+        positions = determine_positions(predictions, threshold)
+        if (positions == 0).all():
+            return 1    # No investments so zero growth (growth = 1)
+
+        # Computing the return based on the positions taken
+        returns = weighted_returns(predictions, positions, weighted)
+
+        return returns.sum().item()
+
+
+def determine_positions(predictions: torch.Tensor, threshold: float) -> torch.Tensor:
+        """
+        Determines the positions to take based on predictions and a threshold.
+
+        Parameters
+        ----------
+        predictions : A tensor containing the predicted values as the first column and the true values as the second column.
+        threshold : The threshold for entering a position.
+
+        Returns
+        -------
+        A tensor indicating the positions to take (1 for long, -1 for short, 0 for no position).
+        """
+        y_pred, y_true = predictions[:, 0], predictions[:, 1]
+        y_prob = torch.sigmoid(y_pred)  # Assuming y_pred is logits
+
+        positions = torch.zeros_like(y_prob)
+        positions[y_prob > threshold] = 1  # Long position
+        positions[y_prob < -threshold] = -1  # Short position
+
+        return positions
+
+def stock_return(predictions: torch.Tensor, positions: torch.Tensor) -> torch.Tensor:
+        """
+        Computes the stock return based on predictions and positions.
+
+        Parameters
+        ----------
+        predictions : A tensor containing the predicted values as the first column and the true values as the second column.
+        positions : A tensor indicating the positions to take (1 for long, -1 for short, 0 for no position).
+
+        Returns
+        -------
+        The stock return as a tensor.
+        """
+        y_true = predictions[:, 1]
+        returns = y_true * positions
+
+        return returns
+
+def weighted_returns(predictions: torch.tensor, positions: torch.tensor, weighted=False) -> torch.Tensor:
     """
-    This function computes the profit for a given set of predictions and true values.
+    Computes the weighted returns based on predictions and positions.
 
     Parameters
     ----------
-    y_pred : Predicted values.
-    y_true : True values.
-    short_threshold : Threshold to enter a short position.
-    long_threshold : Threshold to enter a long position.
+    predictions : A tensor containing the predicted values as the first column and the true values as the second column.
+    positions : A tensor indicating the positions to take (1 for long, -1 for short, 0 for no position).
+    weighted : If True, the size of the position is weighted by the predicted value.
 
     Returns
     -------
-    The profit made by the strategy.
+    The weighted stock return as a tensor.
     """
-    # Heaviside function needs values when the input is zero, hence we give it a value of zero.
-    values = torch.tensor([0], dtype=y_pred.dtype, device=y_pred.device)
+    # Not weighted so equal division
+    weights = torch.ones_like(positions) / len(positions)
+    if weighted:
+        entered_positions = positions != 0
+        y_pred = predictions[:, 0]
+        y_pred_abs = torch.abs(y_pred[entered_positions])
+        pos_weights = torch.softmax(y_pred_abs, dim=0)
+        weights = torch.zeros_like(y_pred)
+        weights[entered_positions] = pos_weights
 
-    # A short position corresponds to -1 and a long position corresponds to 1.
-    short_positions = torch.heaviside(short_threshold - y_pred, values)
-    long_positions = torch.heaviside(y_pred - long_threshold, values)
-    positions = long_positions - short_positions
+    returns = stock_return(predictions, positions)
+    returns *= weights
 
-    return positions * y_true
+    return returns
 
-def maximum_profit(y_true):
-    """
-    This function computes the maximum profit possible mean profit for a given set of true values.
 
-    Parameters
-    ----------
-    y_true : True values.
-
-    Returns
-    -------
-    The maximum profit that can be made.
-    """
-    return y_true.abs().mean()
-
-def approximated_profit(y_pred, y_true, short_threshold, long_threshold):
-    """
-    This function computes the profit for a given set of predictions and true values. It approximates the profit
-    function by using a sigmoid instead of a Heaviside function. This allows for differentiability.
-
-    Parameters
-    ----------
-    y_pred : Predicted values.
-    y_true : True values.
-    short_threshold : Threshold to enter a short position.
-    long_threshold : Threshold to enter a long position.
-
-    Returns
-    -------
-    The profit made by the strategy.
-    """
-
-    # A short position corresponds to -1 and a long position corresponds to 1.
-    short_positions = torch.sigmoid(y_pred - short_threshold)
-    long_positions = torch.sigmoid(y_pred - long_threshold)
-    positions = long_positions - short_positions
-
-    return positions * y_true
