@@ -84,3 +84,19 @@ class BaseConvolve(BaseModel):
         self.layers.append(nn.Dropout(self.dropout))
 
         self.output_dim = sequence_size
+
+    @classmethod
+    def instantiate_from_config(cls, config_path: str, optional_params=None) -> 'BaseConvolve':
+        """
+        Load the model from a configuration file.
+
+        Parameters
+        ----------
+        config_path : Path to the configuration file
+        optional_params : Optional parameters to override the configuration file.
+
+        Returns
+        -------
+        An instance of the BaseConvolve class initialized with the configuration.
+        """
+        return cls._instantiate_from_config(config_path, 'cnn', optional_params)

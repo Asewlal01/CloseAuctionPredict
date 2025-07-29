@@ -46,3 +46,18 @@ class BaseLSTM(BaseModel):
 
         self.output_dim = self.hidden_size
 
+    @classmethod
+    def instantiate_from_config(cls, config_path: str, optional_params=None) -> 'BaseLSTM':
+        """
+        Load the model from a configuration file.
+
+        Parameters
+        ----------
+        config_path : Path to the configuration file
+        optional_params : Optional parameters to override the configuration file.
+
+        Returns
+        -------
+        An instance of the BaseLSTM class initialized with the configuration.
+        """
+        return cls._instantiate_from_config(config_path, 'lstm', optional_params)

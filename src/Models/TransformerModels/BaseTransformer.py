@@ -59,3 +59,19 @@ class BaseTransformer(BaseModel):
 
         # Fully connected layers
         self.output_dim = self.embedding_size
+
+    @classmethod
+    def instantiate_from_config(cls, config_path: str, optional_params=None) -> 'BaseTransformer':
+        """
+        Load the model from a configuration file.
+
+        Parameters
+        ----------
+        config_path : Path to the configuration file
+        optional_params : Optional parameters to override the configuration file.
+
+        Returns
+        -------
+        An instance of the BaseTransformer class initialized with the configuration.
+        """
+        return cls._instantiate_from_config(config_path, 'transformer', optional_params)

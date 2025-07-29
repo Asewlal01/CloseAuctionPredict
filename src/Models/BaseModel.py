@@ -1,6 +1,7 @@
 import torch.nn as nn
 import torch
 from Layers.Unsqueeze import Unsqueeze
+import yaml
 
 class BaseModel(nn.Module):
     """
@@ -117,3 +118,28 @@ class BaseModel(nn.Module):
         for layer in self.layers:
             if hasattr(layer, 'reset_parameters'):
                 layer.reset_parameters()
+
+    @classmethod
+    def _instantiate_from_config(cls, config_path: str, name: str, optional_params: dict) -> 'BaseModel':
+        """
+        Load the model from a configuration file.
+
+        Parameters
+        ----------
+        config_path : Path to the configuration file
+        name : Name of the model to load from the configuration file
+
+        Returns
+        -------
+        Model initialized with given configuration.
+        """
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+
+        model_config = config[name]
+
+        # Update model_config with optional_params
+        if optional_params is not None:
+            model_config.update(optional_params)
+
+        return cls(**model_config)

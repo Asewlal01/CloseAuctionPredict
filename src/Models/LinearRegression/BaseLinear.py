@@ -31,3 +31,19 @@ class BaseLinear(BaseModel):
         # Each time step has feature_size features, hence total features is feature_size * sequence_size
         feature_size = self.feature_size * self.sequence_size
         self.output_dim = feature_size
+
+    @classmethod
+    def instantiate_from_config(cls, config_path: str, optional_params: dict=None) -> 'BaseLinear':
+        """
+        Load the model from a configuration file.
+
+        Parameters
+        ----------
+        config_path : Path to the configuration file
+        optional_params : Additional parameters to pass to the model initialization
+
+        Returns
+        -------
+        An instance of the BaseLinear class initialized with the configuration.
+        """
+        return cls._instantiate_from_config(config_path, 'linear', optional_params)
