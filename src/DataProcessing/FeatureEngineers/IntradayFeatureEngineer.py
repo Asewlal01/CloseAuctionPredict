@@ -1,11 +1,11 @@
 import os
-from Modeling.DatasetManagers.IntradayDatasetManager import generate_dates, date_type
 import pandas as pd
 import numpy as np
 import multiprocessing
 import torch
 from tqdm import tqdm
 
+date_type = list[int]  # Type alias for date as [year, month]
 
 class IntradayFeatureEngineer:
     """
@@ -34,7 +34,7 @@ class IntradayFeatureEngineer:
         self.horizon = horizon
         self.samples_to_keep = samples_to_keep
 
-    def assemble(self, start_date: date_type, end_date: date_type) -> None:
+    def assemble(self, start_date: date_type, end_date: date_type, stocks_to_consider) -> None:
         """
         Assemble the intraday dataset.
 
@@ -50,11 +50,11 @@ class IntradayFeatureEngineer:
         # Loop over all the months
         for month in tqdm(months):
             process_month(month, self.lob_path, self.save_path,
-                          self.horizon, self.sequence_size, self.samples_to_keep)
+                          self.horizon, self.sequence_size, self.samples_to_keep, stocks_to_consider)
 
 
 def process_month(month: date_type, lob_path: str, save_path: str, horizon: int, sequence_size: int,
-                  samples_to_keep: int) -> None:
+                  samples_to_keep: int, stocks_to_consider: list=None) -> None:
     """
     Process the stocks in the given month.
 
@@ -69,15 +69,15 @@ def process_month(month: date_type, lob_path: str, save_path: str, horizon: int,
     """
 
     # Get all the files for the month
-    files_to_process = get_files_to_process(month, lob_path)
+    files_to_process = get_files_to_process(month, lob_path, stocks_to_consider)
     if not files_to_process:
         print(f"No files to process for month {month}.")
         return
 
     # Go through each date
-    month_save_path = os.path.join(save_path, f'{month[0]}-{month[1]}')
+    # month_save_path = os.path.join(save_path, f'{month[0]}-{month[1]}')
     for date, files in files_to_process.items():
-        process_day(date, files, month_save_path, horizon, sequence_size, samples_to_keep)
+        process_day(date, files, save_path, horizon, sequence_size, samples_to_keep)
 
 
 def get_files_to_process(month: date_type, lob_path: str, stocks_to_consider: list=None) -> dict[str, list[str]]:
@@ -145,20 +145,35 @@ def process_day(date: str, files: list[str], save_path: str, horizon: int, seque
     """
 
     # Create a pool of workers
-    items = [(file_path, horizon, sequence_size, samples_to_keep) for file_path in files]
+    items = []
+    stock_ids = []
+    for file_path in files:
+        # Check if the file is a parquet file
+        if not file_path.endswith('.parquet'):
+            print(f"Skipping non-parquet file: {file_path}")
+            continue
+
+        items.append((file_path, horizon, sequence_size, samples_to_keep))
+        stock_ids.append(file_path.split('/')[-2])  # Path/id/date.parquet, so one to last corresponds to stock id
 
     # Parallel processing of files
     with multiprocessing.Pool() as pool:
         results = pool.starmap(process_file, items)
 
-    # Filter out empty results
-    results = [result for result in results if result[0].size > 0 and result[1].size > 0]
-    if not results:
+    # Filtering all the results
+    filtered_results = []
+    filtered_stock_ids = []
+    for result, stock_id in zip(results, stock_ids):
+        if result[0].size > 0 and result[1].size > 0:
+            filtered_results.append(result)
+            filtered_stock_ids.append(stock_id)
+
+    if not filtered_results:
         print(f"No valid data for date {date}.")
         return
 
     # Save the results
-    tensor_save(results, save_path, date)
+    tensor_save(filtered_results, filtered_stock_ids, save_path, date)
 
 
 def process_file(file_path: str,
@@ -418,13 +433,14 @@ def construct_labels(df: pd.DataFrame, horizon: int, sequence_size: int, samples
 
     return y
 
-def tensor_save(results, save_path: str, date: str) -> None:
+def tensor_save(results, stock_ids, save_path: str, date: str) -> None:
     """
     Save the results  as a tensor after processing them.
 
     Parameters
     ----------
     results : List of tuples containing the results.
+    stock_ids : List of stock ids corresponding to the results.
     save_path : Path to the directory to save the processed data.
     date : Date to save the data for.
     """
@@ -432,7 +448,7 @@ def tensor_save(results, save_path: str, date: str) -> None:
     # Split into X and y
     xs, ys = zip(*results)
     xs = np.concatenate(xs, axis=0)
-    ys = np.concatenate(ys)
+    ys = np.stack(ys, axis=0)
 
     # To tensors
     xs = torch.tensor(xs, dtype=torch.float32)
@@ -447,5 +463,37 @@ def tensor_save(results, save_path: str, date: str) -> None:
 
     x_save_path = os.path.join(date_path, 'x.pt')
     y_save_path = os.path.join(date_path, 'y.pt')
+    stock_ids_save_path = os.path.join(date_path, 'stock_ids.pt')
+
     torch.save(xs, x_save_path)
     torch.save(ys, y_save_path)
+    torch.save(stock_ids, stock_ids_save_path)
+
+def generate_dates(start_date: date_type, end_date: date_type) -> list[date_type]:
+    """
+    Generate a list of dates between the start and end date. The dates are given as [year, month].
+
+    Parameters
+    ----------
+    start_date : Start date to process the trades from. Given as [year, month]
+    end_date : End date to process the trades to. Given as [year, month]
+
+    Returns
+    -------
+    List of dates between the start and end date
+    """
+    start_year, start_month = start_date
+    end_year, end_month = end_date
+
+    dates = []
+    year, month = start_year, start_month
+
+    # Checks if we are before the end year, or before the end month in the same year
+    while (year < end_year) or (year == end_year and month <= end_month):
+        dates.append([year, month])
+        month += 1
+        if month > 12:
+            month = 1
+            year += 1
+
+    return dates

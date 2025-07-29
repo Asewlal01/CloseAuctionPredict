@@ -8,9 +8,9 @@ from tqdm import tqdm
 from DataProcessing.FeatureEngineers.IntradayFeatureEngineer import get_files_to_process
 from datetime import datetime
 
-date_type = list[int, int]
+date_type = list[int]
 
-class ClosingDatasetAssembler:
+class ClosingFeatureEngineer:
     """
     Assembles Closing Auction datasets for analysis.
     """
@@ -102,21 +102,28 @@ def process_day(date: str, files: list[str], auction_path: str, trade_path: str,
     horizon : Number of points in the future to use for the target variable.
     sequence_size : Size of the input sequence.
     """
-    items = [(file_path, auction_path, trade_path, horizon, sequence_size) for file_path in files]
+    items = []
+    stock_ids = []
+    for file_path in files:
+        items.append((file_path, auction_path, trade_path, horizon, sequence_size))
+        stock_ids.append(file_path.split('/')[-2])
+
     results = [process_file(*item) for item in items]
 
     # Filtering
     filtered_results = []
-    for result in results:
+    filtered_stock_ids = []
+    for result, stock_id in zip(results, stock_ids):
         x, y, z = result
         if x.size > 0 and y.size > 0 and z.size > 0:
             filtered_results.append((x, y, z))
+            filtered_stock_ids.append(stock_id)
 
     if not filtered_results:
         return
 
     # Saving
-    tensor_save(filtered_results, save_path, date, horizon)
+    tensor_save(filtered_results, filtered_stock_ids, save_path, date)
 
 
 def process_file(file_path: str, auction_path: str, trade_path: str,
@@ -369,16 +376,16 @@ def previous_file_path(today_file_path: str, previous_day: str) -> str:
     return previous_day_path
 
 
-def tensor_save(results: list[tuple[np.ndarray, np.ndarray, np.ndarray]], save_path: str, date: str, horizon) -> None:
+def tensor_save(results: list[tuple[np.ndarray, np.ndarray, np.ndarray]], stock_ids: list[str], save_path: str, date: str) -> None:
     """
     Save the results to a tensor file.
 
     Parameters
     ----------
     results : List of tuples containing the features and labels.
+    stock_ids : List of stock ids corresponding to the results.
     save_path : Path to save the processed data.
     date : Date to save the data for.
-    horizon : Prediction horizon
     """
     xs, ys, zs = zip(*results)
     x = np.stack(xs, axis=0)
@@ -401,11 +408,14 @@ def tensor_save(results: list[tuple[np.ndarray, np.ndarray, np.ndarray]], save_p
     x_save_path = os.path.join(date_path, 'x.pt')
     y_save_path = os.path.join(date_path, 'y.pt')
     z_save_path = os.path.join(date_path, 'z.pt')
+    stock_ids_save_path = os.path.join(date_path, 'stock_ids.pt')
 
     # Save the tensors
     torch.save(x, x_save_path)
     torch.save(y, y_save_path)
     torch.save(z, z_save_path)
+    torch.save(stock_ids, stock_ids_save_path)
+
 
 def get_idx_and_day(file_path: str) -> tuple[str, str]:
     """
