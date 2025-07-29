@@ -26,7 +26,7 @@ class BaseDatasetManager:
         self.dataset_path = dataset_path
         self.dataset: list[list[BaseSampleTuple]] = [[], [], []]  # Assuming train, validation and test datasets
 
-    def setup_dataset(self, train_size: int, validation_size: int):
+    def setup_dataset(self, train_size: int, validation_size: int, test_size: int, start_index: int = 0):
         """
         Set up the dataset by loading data from the specified directory.
 
@@ -34,23 +34,36 @@ class BaseDatasetManager:
         ----------
         train_size: Number of training examples to load
         validation_size: Number of validation examples to load
+        test_size: Number of test examples to load. If not specified, the rest of the data will be used as the test set.
+        start_index: Index to start loading data from. This is useful for resuming training from a specific point.
         """
 
         # Get all the dates in the dataset directory
-        dates = sorted(os.listdir(self.dataset_path))
+        dates = sorted(os.listdir(self.dataset_path))[start_index:]
         if len(dates) == 0:
             raise ValueError(f'No data found in the dataset path {self.dataset_path}.')
 
-        # Load the data for all dates
-        data = self.load_dataset(dates)
 
         # Split the data into train, validation and test sets
-        if train_size + validation_size > len(dates):
+        if train_size + validation_size + test_size > len(dates):
             raise ValueError(f'Sizes for train and validation sets exceed the number of available dates: {len(dates)}.')
 
+        # Load the data for all dates
+        dates_to_load = dates[:train_size + validation_size + test_size]
+        data = self.load_dataset(dates_to_load)
+
+        # Test size needs to be set to the remaining data if not specified
+        if test_size == 0:
+            test_size = len(dates) - (train_size + validation_size)
+
+        # Make indices for splitting the data
+        train_index = train_size
+        validation_index = train_index + validation_size
+        test_index = validation_index + test_size
+
         self.dataset[0] = data[:train_size]  # Training set
-        self.dataset[1] = data[train_size:train_size + validation_size]  # Validation set
-        self.dataset[2] = data[train_size + validation_size:]  # Test set
+        self.dataset[1] = data[train_index:validation_index]  # Validation set
+        self.dataset[2] = data[validation_index:test_index]  # Test set
 
     def load_dataset(self, dates: list[str]) -> list[BaseSampleTuple]:
         """
@@ -100,10 +113,8 @@ class BaseDatasetManager:
         List of training samples. Each dataset is a tuple of the form (X, y).
         """
         train_dataset = self.dataset[0]
-        if not train_dataset:
-            raise ValueError('Training dataset not set up. Please call setup_dataset() first.')
 
-        return self.dataset[0]
+        return train_dataset
 
     def get_validation_dataset(self) -> list[BaseSampleTuple]:
         """
@@ -114,10 +125,8 @@ class BaseDatasetManager:
         List of validation samples. Each dataset is a tuple of the form (X, y).
         """
         validation_dataset = self.dataset[1]
-        if not validation_dataset:
-            raise ValueError('Validation dataset not set up. Please call setup_dataset() first.')
 
-        return self.dataset[1]
+        return validation_dataset
 
     def get_test_dataset(self) -> list[BaseSampleTuple]:
         """
@@ -128,7 +137,5 @@ class BaseDatasetManager:
         List of test samples. Each dataset is a tuple of the form (X, y).
         """
         test_dataset = self.dataset[2]
-        if not test_dataset:
-            raise ValueError('Test dataset not set up. Please call setup_dataset() first.')
 
-        return self.dataset[2]
+        return test_dataset
