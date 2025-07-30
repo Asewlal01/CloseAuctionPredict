@@ -110,7 +110,6 @@ def groups_to_process(df: pd.DataFrame, lob_data: str, max_price) -> list[tuple[
 
         # We only need the indices of the lob data
         lob_indices = lob_df.index
-
         items.append((group, date, lob_indices, max_price))
 
     return items
@@ -146,7 +145,9 @@ def process_day(df: pd.DataFrame, date: datetime.date, lob_indices: pd.Index, ma
     first_timestamp = df['t'].iloc[0]
     if first_timestamp < lob_indices[0]:
         first_timestamp -= pd.Timedelta(seconds=1) # To avoid the first timestamp being equal to the first lob index
-        lob_indices = pd.Index([first_timestamp] + lob_indices.tolist())
+    else:
+        first_timestamp = lob_indices[0] - pd.Timedelta(seconds=1)  # Adjust to ensure it is before the first lob index
+    lob_indices = pd.Index([first_timestamp] + lob_indices.tolist())
 
     # Bin the dataframe to the lob indices
     binned = pd.cut(df['t'], bins=lob_indices)
