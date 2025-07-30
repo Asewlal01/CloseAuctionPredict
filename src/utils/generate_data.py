@@ -24,7 +24,7 @@ def generate_trade_day(start_time: datetime, expected_trades: int, expected_pric
     n_trades = np.random.poisson(expected_trades)
 
     # Generate timestamps
-    total_seconds = 8 * 60 * 60  # 8 hours in seconds
+    total_seconds = 2 * 60 * 60  # 2 hours in seconds
     timestamps = [start_time + timedelta(seconds=np.random.randint(0, total_seconds)) for _ in range(n_trades)]
     timestamps.sort()
 

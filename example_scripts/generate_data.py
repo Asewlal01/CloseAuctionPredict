@@ -2,10 +2,10 @@ from datetime import datetime
 from utils.generate_data import *
 import os
 
-# Starting at 9 AM and ending at 5 PM, for 10 days
+# Starting at 9 AM and ending at 11 AM, for 10 days
 start_time = datetime(2023, 1, 1, 9, 0, 0)
-end_time = datetime(2023, 1, 1, 17, 0, 0)
-days = 10   # Number of days to generate data for
+end_time = datetime(2023, 1, 1, 11, 0, 0)
+days = 100   # Number of days to generate data for
 
 # Where to save the data
 save_path = 'example_data/raw_data'
