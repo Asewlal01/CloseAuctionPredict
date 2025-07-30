@@ -1,11 +1,15 @@
 from datetime import datetime
 from utils.generate_data import *
 import os
+import numpy
+
+# set random seed for reproducibility
+numpy.random.seed(42)
 
 # Starting at 9 AM and ending at 11 AM, for 10 days
 start_time = datetime(2023, 1, 1, 9, 0, 0)
 end_time = datetime(2023, 1, 1, 11, 0, 0)
-days = 100   # Number of days to generate data for
+days = 60   # Number of days to generate data for
 
 # Where to save the data
 save_path = 'example_data/raw_data'
