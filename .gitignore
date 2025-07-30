@@ -175,6 +175,7 @@ cython_debug/
 
 # Ignore pushed data files
 data/
+example_data/
 
 # Ignore results and figures
 results/
